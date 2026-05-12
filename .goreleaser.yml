@@ -1,0 +1,106 @@
+version: 2
+
+project_name: clipbridge
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: clipbridge
+    main: ./cmd/clipbridge
+    binary: clipbridge
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+
+  - id: clipbridged
+    main: ./cmd/clipbridged
+    binary: clipbridged
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+
+  - id: clipbridge-remote
+    main: ./cmd/clipbridge-remote
+    binary: clipbridge-remote
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+
+archives:
+  - id: default
+    builds:
+      - clipbridge
+      - clipbridged
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- if eq .Os "darwin" }}macOS
+      {{- else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    files:
+      - LICENSE
+      - skill/paste.md
+
+  - id: remote
+    builds:
+      - clipbridge-remote
+    name_template: >-
+      {{ .ProjectName }}-remote_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    files:
+      - LICENSE
+      - skill/paste.md
+
+checksum:
+  name_template: SHA256SUMS
+
+sboms:
+  - id: default
+    artifacts: archive
+
+release:
+  github:
+    owner: clipbridge
+    name: clipbridge
+
+brews:
+  - name: clipbridge
+    repository:
+      owner: clipbridge
+      name: tap
+      branch: main
+    directory: Formula
+    homepage: https://github.com/clipbridge/clipbridge
+    description: Clipboard bridge for Claude Code over SSH
+    license: MIT
+    install: |
+      bin.install "clipbridge"
+      bin.install "clipbridged"
+    test: |
+      assert_match version, shell_output("#{bin}/clipbridge --version")

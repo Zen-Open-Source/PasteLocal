@@ -1,0 +1,21 @@
+//go:build !darwin && !linux
+
+package clipboard
+
+import (
+	cliperr "github.com/clipbridge/clipbridge/internal/errors"
+	"context"
+)
+
+// unsupportedReader is returned on platforms without a clipboard tool.
+type unsupportedReader struct{}
+
+func newPlatformReader(toolOverride string) Reader {
+	return &unsupportedReader{}
+}
+
+// ReadImage always returns an error on unsupported platforms.
+func (r *unsupportedReader) ReadImage(ctx context.Context) ([]byte, error) {
+	return nil, cliperr.NewWithMessage("CB1002",
+		"clipboard reading is not supported on this platform")
+}
