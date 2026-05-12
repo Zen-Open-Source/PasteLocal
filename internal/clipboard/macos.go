@@ -7,7 +7,7 @@ import (
 	"context"
 	"os/exec"
 
-	cliperr "github.com/clipbridge/clipbridge/internal/errors"
+	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 )
 
 const defaultPngpaste = "pngpaste"

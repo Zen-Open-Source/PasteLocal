@@ -15,7 +15,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
-	cliperr "github.com/clipbridge/clipbridge/internal/errors"
+	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 )
 
 func init() {
@@ -99,7 +99,7 @@ func convertHEIC(data []byte) ([]byte, error) {
 // convertHEICSips converts HEIC data using macOS's built-in sips tool.
 func convertHEICSips(data []byte) ([]byte, error) {
 	// sips needs a file path; write to a temp file.
-	f, err := os.CreateTemp("", "clipbridge-*.heic")
+	f, err := os.CreateTemp("", "pastelocal-*.heic")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp file: %w", err)
 	}
@@ -129,7 +129,7 @@ func convertHEICSips(data []byte) ([]byte, error) {
 
 // convertHEICHeifConvert converts HEIC data using heif-convert on Linux.
 func convertHEICHeifConvert(data []byte) ([]byte, error) {
-	f, err := os.CreateTemp("", "clipbridge-*.heic")
+	f, err := os.CreateTemp("", "pastelocal-*.heic")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp file: %w", err)
 	}

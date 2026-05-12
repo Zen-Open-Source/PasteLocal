@@ -9,12 +9,12 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
-	if s.BinaryPath != "/usr/local/bin/clipbridged" {
-		t.Errorf("BinaryPath = %q, want /usr/local/bin/clipbridged", s.BinaryPath)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
+	if s.BinaryPath != "/usr/local/bin/pastelocald" {
+		t.Errorf("BinaryPath = %q, want /usr/local/bin/pastelocald", s.BinaryPath)
 	}
-	if s.ConfigPath != "/etc/clipbridge/config.toml" {
-		t.Errorf("ConfigPath = %q, want /etc/clipbridge/config.toml", s.ConfigPath)
+	if s.ConfigPath != "/etc/pastelocal/config.toml" {
+		t.Errorf("ConfigPath = %q, want /etc/pastelocal/config.toml", s.ConfigPath)
 	}
 	if s.Port != 8080 {
 		t.Errorf("Port = %d, want 8080", s.Port)
@@ -22,7 +22,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestSystemdUnitGeneration(t *testing.T) {
-	s := New("/home/user/.local/bin/clipbridged", "/home/user/.config/clipbridge/config.toml", 8080)
+	s := New("/home/user/.local/bin/pastelocald", "/home/user/.config/pastelocal/config.toml", 8080)
 	content := s.generateUnit()
 
 	// Verify required sections.
@@ -34,7 +34,7 @@ func TestSystemdUnitGeneration(t *testing.T) {
 	}
 
 	// Verify Unit fields.
-	if !strings.Contains(content, "Description=clipbridge clipboard daemon") {
+	if !strings.Contains(content, "Description=pastelocal clipboard daemon") {
 		t.Error("unit missing Description")
 	}
 	if !strings.Contains(content, "After=network.target") {
@@ -68,14 +68,14 @@ func TestSystemdUnitPath(t *testing.T) {
 	}
 
 	home, _ := homeDir()
-	expected := home + "/.config/systemd/user/clipbridge.service"
+	expected := home + "/.config/systemd/user/pastelocal.service"
 	if path != expected {
 		t.Errorf("systemdUnitPath() = %q, want %q", path, expected)
 	}
 }
 
 func TestInstallUninstallExist(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
 
 	// Verify Install and Uninstall methods exist on the Service type.
 	_ = s.Install

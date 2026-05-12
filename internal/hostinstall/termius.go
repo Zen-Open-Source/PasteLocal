@@ -5,7 +5,7 @@ import (
 )
 
 // PrintTermiusInstructions prints the values the user should paste into
-// Termius to set up RemoteForward for clipbridge.
+// Termius to set up RemoteForward for pastelocal.
 func PrintTermiusInstructions(alias string, port int) error {
 	fmt.Printf(`Open Termius → Hosts → %s → Edit → Advanced → Port Forwarding
 Add a new entry:
@@ -14,7 +14,7 @@ Add a new entry:
   Local Port: %d
   Remote: 127.0.0.1
   Remote Port: %d
-Then run: clipbridge add-host %s --finish
+Then run: pastelocal add-host %s --finish
 `, alias, port, port, alias)
 	return nil
 }

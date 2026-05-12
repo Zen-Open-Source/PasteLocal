@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/config"
-	"github.com/clipbridge/clipbridge/internal/proto"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/proto"
 )
 
 // testEnv manages the lifecycle of an integration test server.
@@ -42,7 +42,7 @@ type testEnv struct {
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "clipbridge-integration-*")
+	dir, err := os.MkdirTemp("", "pastelocal-integration-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestIntegration_LoopbackBinding(t *testing.T) {
 // TestIntegration_RateLimiter hits /clipboard rapidly and verifies CB4001
 // is returned after the configured threshold is exceeded.
 func TestIntegration_RateLimiter(t *testing.T) {
-	dir, err := os.MkdirTemp("", "clipbridge-integration-ratelimit-*")
+	dir, err := os.MkdirTemp("", "pastelocal-integration-ratelimit-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}

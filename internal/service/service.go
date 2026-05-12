@@ -5,9 +5,9 @@ import (
 	"runtime"
 )
 
-// Service represents a system service configuration for clipbridged.
+// Service represents a system service configuration for pastelocald.
 type Service struct {
-	BinaryPath string // path to clipbridged binary
+	BinaryPath string // path to pastelocald binary
 	ConfigPath string // path to config.toml
 	Port       int
 }

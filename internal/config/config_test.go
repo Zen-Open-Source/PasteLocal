@@ -62,7 +62,7 @@ log_level = "debug"
 max_image_bytes = 1048576
 max_in_flight = 8
 rate_limit_per_minute = 120
-audit_log = "/var/log/clipbridge.log"
+audit_log = "/var/log/pastelocal.log"
 
 [macos]
 pngpaste_path = "/usr/local/bin/pngpaste"
@@ -104,8 +104,8 @@ termius = true
 	if cfg.RateLimitPerMinute != 120 {
 		t.Errorf("RateLimitPerMinute = %d, want 120", cfg.RateLimitPerMinute)
 	}
-	if cfg.AuditLog != "/var/log/clipbridge.log" {
-		t.Errorf("AuditLog = %q, want %q", cfg.AuditLog, "/var/log/clipbridge.log")
+	if cfg.AuditLog != "/var/log/pastelocal.log" {
+		t.Errorf("AuditLog = %q, want %q", cfg.AuditLog, "/var/log/pastelocal.log")
 	}
 	if cfg.MacOS.PngpastePath != "/usr/local/bin/pngpaste" {
 		t.Errorf("MacOS.PngpastePath = %q, want %q", cfg.MacOS.PngpastePath, "/usr/local/bin/pngpaste")
@@ -286,11 +286,11 @@ func TestSaveCreatesDirectory(t *testing.T) {
 
 func TestEnvOverrides(t *testing.T) {
 	// Set environment variables
-	os.Setenv("CLIPBRIDGE_PORT", "9000")
-	os.Setenv("CLIPBRIDGE_LOG_LEVEL", "trace")
+	os.Setenv("PASTELOCAL_PORT", "9000")
+	os.Setenv("PASTELOCAL_LOG_LEVEL", "trace")
 	defer func() {
-		os.Unsetenv("CLIPBRIDGE_PORT")
-		os.Unsetenv("CLIPBRIDGE_LOG_LEVEL")
+		os.Unsetenv("PASTELOCAL_PORT")
+		os.Unsetenv("PASTELOCAL_LOG_LEVEL")
 	}()
 
 	dir := t.TempDir()
@@ -320,11 +320,11 @@ log_level = "warn"
 }
 
 func TestEnvOverridesOnDefault(t *testing.T) {
-	os.Setenv("CLIPBRIDGE_PORT", "7777")
-	os.Setenv("CLIPBRIDGE_LOG_LEVEL", "error")
+	os.Setenv("PASTELOCAL_PORT", "7777")
+	os.Setenv("PASTELOCAL_LOG_LEVEL", "error")
 	defer func() {
-		os.Unsetenv("CLIPBRIDGE_PORT")
-		os.Unsetenv("CLIPBRIDGE_LOG_LEVEL")
+		os.Unsetenv("PASTELOCAL_PORT")
+		os.Unsetenv("PASTELOCAL_LOG_LEVEL")
 	}()
 
 	cfg, err := Load("/nonexistent/path/config.toml")
@@ -341,9 +341,9 @@ func TestEnvOverridesOnDefault(t *testing.T) {
 }
 
 func TestConfigDirEnvOverride(t *testing.T) {
-	customDir := "/tmp/custom-clipbridge-config"
-	os.Setenv("CLIPBRIDGE_CONFIG_DIR", customDir)
-	defer os.Unsetenv("CLIPBRIDGE_CONFIG_DIR")
+	customDir := "/tmp/custom-pastelocal-config"
+	os.Setenv("PASTELOCAL_CONFIG_DIR", customDir)
+	defer os.Unsetenv("PASTELOCAL_CONFIG_DIR")
 
 	got := ConfigDir()
 	if got != customDir {
@@ -352,22 +352,22 @@ func TestConfigDirEnvOverride(t *testing.T) {
 }
 
 func TestConfigDirDefault(t *testing.T) {
-	os.Unsetenv("CLIPBRIDGE_CONFIG_DIR")
+	os.Unsetenv("PASTELOCAL_CONFIG_DIR")
 
 	got := ConfigDir()
 	home, _ := os.UserHomeDir()
-	expected := filepath.Join(home, ".config", "clipbridge")
+	expected := filepath.Join(home, ".config", "pastelocal")
 	if got != expected {
 		t.Errorf("ConfigDir() = %q, want %q", got, expected)
 	}
 }
 
 func TestConfigPathExpansion(t *testing.T) {
-	os.Unsetenv("CLIPBRIDGE_CONFIG_DIR")
+	os.Unsetenv("PASTELOCAL_CONFIG_DIR")
 
 	got := ConfigPath()
 	home, _ := os.UserHomeDir()
-	expected := filepath.Join(home, ".config", "clipbridge", DefaultConfigFile)
+	expected := filepath.Join(home, ".config", "pastelocal", DefaultConfigFile)
 	if got != expected {
 		t.Errorf("ConfigPath() = %q, want %q", got, expected)
 	}
@@ -616,8 +616,8 @@ func TestMergeDefaultsPartialOverride(t *testing.T) {
 }
 
 func TestEnvOverrideInvalidPort(t *testing.T) {
-	os.Setenv("CLIPBRIDGE_PORT", "not-a-number")
-	defer os.Unsetenv("CLIPBRIDGE_PORT")
+	os.Setenv("PASTELOCAL_PORT", "not-a-number")
+	defer os.Unsetenv("PASTELOCAL_PORT")
 
 	cfg := Default()
 	applyEnvOverrides(cfg)
@@ -629,8 +629,8 @@ func TestEnvOverrideInvalidPort(t *testing.T) {
 }
 
 func TestEnvOverrideZeroPort(t *testing.T) {
-	os.Setenv("CLIPBRIDGE_PORT", "0")
-	defer os.Unsetenv("CLIPBRIDGE_PORT")
+	os.Setenv("PASTELOCAL_PORT", "0")
+	defer os.Unsetenv("PASTELOCAL_PORT")
 
 	cfg := Default()
 	applyEnvOverrides(cfg)

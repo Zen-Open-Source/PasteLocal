@@ -2,7 +2,7 @@
 
 Termius is a popular SSH client with desktop (macOS, Windows, Linux) and
 mobile (iOS, Android) apps. Unlike OpenSSH, Termius does not use
-`~/.ssh/config`, so clipbridge cannot auto-edit your SSH configuration.
+`~/.ssh/config`, so pastelocal cannot auto-edit your SSH configuration.
 Instead, you configure the Remote port forwarding manually inside the
 Termius UI.
 
@@ -15,10 +15,10 @@ Termius UI.
 
 ## Termius Desktop (macOS / Windows / Linux)
 
-### Step 1: Initialize clipbridge locally
+### Step 1: Initialize pastelocal locally
 
 ```bash
-clipbridge init
+pastelocal init
 ```
 
 This starts the daemon on port 7331 (default) and stores the auth token.
@@ -26,7 +26,7 @@ This starts the daemon on port 7331 (default) and stores the auth token.
 ### Step 2: Get the Termius instructions
 
 ```bash
-clipbridge add-host myserver --termius
+pastelocal add-host myserver --termius
 ```
 
 This prints the exact values you need to enter in Termius. The output looks
@@ -40,7 +40,7 @@ Add a new entry:
   Local Port: 7331
   Remote: 127.0.0.1
   Remote Port: 7331
-Then run: clipbridge add-host myserver --finish
+Then run: pastelocal add-host myserver --finish
 ```
 
 ### Step 3: Configure port forwarding in Termius
@@ -67,10 +67,10 @@ Then run: clipbridge add-host myserver --finish
 ### Step 4: Finish the installation
 
 ```bash
-clipbridge add-host myserver --finish
+pastelocal add-host myserver --finish
 ```
 
-This copies the `clipbridge-remote` binary, the auth token, and the Claude
+This copies the `pastelocal-remote` binary, the auth token, and the Claude
 skill file to the remote host via SCP. It skips the SSH config edit (since
 Termius handles that part).
 
@@ -81,7 +81,7 @@ Termius handles that part).
 2. On the remote host, run:
 
 ```bash
-clipbridge-remote
+pastelocal-remote
 ```
 
 If you have an image on your local clipboard, this prints a file path. If it
@@ -92,13 +92,13 @@ active yet — reconnect in Termius.
 
 ## Termius Mobile (iOS / Android)
 
-### Step 1: Initialize clipbridge locally
+### Step 1: Initialize pastelocal locally
 
 On your laptop (not the phone), run:
 
 ```bash
-clipbridge init
-clipbridge add-host myserver --termius
+pastelocal init
+pastelocal add-host myserver --termius
 ```
 
 Note the port values printed (default: 7331).
@@ -128,16 +128,16 @@ Note the port values printed (default: 7331).
 On your laptop, run:
 
 ```bash
-clipbridge add-host myserver --finish
+pastelocal add-host myserver --finish
 ```
 
 ### Step 4: Connect and test
 
 1. Connect to the host in the Termius mobile app.
-2. On the remote host, run `clipbridge-remote` to test.
+2. On the remote host, run `pastelocal-remote` to test.
 
 > **Note on mobile:** The "local" side of the RemoteForward is your phone,
-> which may not have a running `clipbridged` daemon. For the mobile workflow,
+> which may not have a running `pastelocald` daemon. For the mobile workflow,
 > you typically use a desktop machine as the local clipboard source and the
 > phone only for initiating the SSH connection. The daemon must be running on
 > the machine that has the clipboard you want to share.
@@ -154,21 +154,21 @@ The port forwarding isn't active. This means either:
   session to the host first.
 - The port forwarding rule isn't saved or was configured incorrectly.
   **Fix:** Double-check all five fields (Type, Local Address, Local Port,
-  Remote Address, Remote Port) against the values from `clipbridge add-host
+  Remote Address, Remote Port) against the values from `pastelocal add-host
   <alias> --termius`.
 - You're using a non-default port. **Fix:** Make sure the port in Termius
-  matches the port in `~/.config/clipbridge/config.toml`.
+  matches the port in `~/.config/pastelocal/config.toml`.
 
 ### "CB2001: Invalid auth token"
 
 The token on the remote host doesn't match the local token. This happens if
-you ran `clipbridge init` again or `clipbridge rotate-token` without
+you ran `pastelocal init` again or `pastelocal rotate-token` without
 updating the remote.
 
 **Fix:**
 
 ```bash
-clipbridge add-host myserver --update-token-only
+pastelocal add-host myserver --update-token-only
 ```
 
 ### Port forwarding doesn't persist between connections
@@ -180,24 +180,24 @@ don't:
 - Try deleting and re-adding the rule.
 - On mobile, make sure you're editing the correct host entry.
 
-### clipbridge-remote not found on remote host
+### pastelocal-remote not found on remote host
 
 The `--finish` step didn't complete or the binary was removed.
 
 **Fix:**
 
 ```bash
-clipbridge add-host myserver --finish
+pastelocal add-host myserver --finish
 ```
 
 ### Can I use Termius with a non-default port?
 
 Yes. If you changed the port in `config.toml` or used `--port` during
-`clipbridge init`, use that same port in both the Local Port and Remote Port
+`pastelocal init`, use that same port in both the Local Port and Remote Port
 fields in Termius. The two must always match.
 
 ### Multiple Termius hosts
 
-Each host needs its own port forwarding rule. Run `clipbridge add-host
+Each host needs its own port forwarding rule. Run `pastelocal add-host
 <alias> --termius` for each host and configure the rule in the corresponding
 Termius host entry.

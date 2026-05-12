@@ -11,12 +11,12 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
-	if s.BinaryPath != "/usr/local/bin/clipbridged" {
-		t.Errorf("BinaryPath = %q, want /usr/local/bin/clipbridged", s.BinaryPath)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
+	if s.BinaryPath != "/usr/local/bin/pastelocald" {
+		t.Errorf("BinaryPath = %q, want /usr/local/bin/pastelocald", s.BinaryPath)
 	}
-	if s.ConfigPath != "/etc/clipbridge/config.toml" {
-		t.Errorf("ConfigPath = %q, want /etc/clipbridge/config.toml", s.ConfigPath)
+	if s.ConfigPath != "/etc/pastelocal/config.toml" {
+		t.Errorf("ConfigPath = %q, want /etc/pastelocal/config.toml", s.ConfigPath)
 	}
 	if s.Port != 8080 {
 		t.Errorf("Port = %d, want 8080", s.Port)
@@ -24,7 +24,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestPlistGeneration(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
 	content, err := s.generatePlist()
 	if err != nil {
 		t.Fatalf("generatePlist() error: %v", err)
@@ -88,20 +88,20 @@ func TestPlistGeneration(t *testing.T) {
 	if !strings.Contains(str, "<array>") {
 		t.Error("plist missing <array> element")
 	}
-	if !strings.Contains(str, "<string>/usr/local/bin/clipbridged</string>") {
+	if !strings.Contains(str, "<string>/usr/local/bin/pastelocald</string>") {
 		t.Error("plist missing binary path in ProgramArguments")
 	}
 	if !strings.Contains(str, "<string>--config</string>") {
 		t.Error("plist missing --config in ProgramArguments")
 	}
-	if !strings.Contains(str, "<string>/etc/clipbridge/config.toml</string>") {
+	if !strings.Contains(str, "<string>/etc/pastelocal/config.toml</string>") {
 		t.Error("plist missing config path in ProgramArguments")
 	}
 
 	// Verify StandardOutPath and StandardErrorPath.
 	home, _ := homeDir()
-	expectedStdout := filepath.Join(home, "Library", "Logs", "clipbridge.log")
-	expectedStderr := filepath.Join(home, "Library", "Logs", "clipbridge.err")
+	expectedStdout := filepath.Join(home, "Library", "Logs", "pastelocal.log")
+	expectedStderr := filepath.Join(home, "Library", "Logs", "pastelocal.err")
 	if !strings.Contains(str, expectedStdout) {
 		t.Errorf("plist missing StandardOutPath %q", expectedStdout)
 	}
@@ -111,7 +111,7 @@ func TestPlistGeneration(t *testing.T) {
 }
 
 func TestPlistXMLDeclaration(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
 	content, err := s.generatePlist()
 	if err != nil {
 		t.Fatalf("generatePlist() error: %v", err)
@@ -138,7 +138,7 @@ func TestPlistPath(t *testing.T) {
 }
 
 func TestInstallUninstallExist(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
 
 	// Verify Install and Uninstall methods exist on the Service type.
 	// We don't actually run them (they require launchctl), just verify
@@ -152,7 +152,7 @@ func TestInstallUninstallExist(t *testing.T) {
 }
 
 func TestPlistContainsRequiredFields(t *testing.T) {
-	s := New("/opt/clipbridge/bin/clipbridged", "/opt/clipbridge/config.toml", 9090)
+	s := New("/opt/pastelocal/bin/pastelocald", "/opt/pastelocal/config.toml", 9090)
 	content, err := s.generatePlist()
 	if err != nil {
 		t.Fatalf("generatePlist() error: %v", err)
@@ -175,10 +175,10 @@ func TestPlistContainsRequiredFields(t *testing.T) {
 	}
 
 	// Verify custom binary path appears.
-	if !strings.Contains(str, "/opt/clipbridge/bin/clipbridged") {
+	if !strings.Contains(str, "/opt/pastelocal/bin/pastelocald") {
 		t.Error("plist does not contain the custom binary path")
 	}
-	if !strings.Contains(str, "/opt/clipbridge/config.toml") {
+	if !strings.Contains(str, "/opt/pastelocal/config.toml") {
 		t.Error("plist does not contain the custom config path")
 	}
 }
@@ -242,7 +242,7 @@ func TestUninstallNoPlistFile(t *testing.T) {
 // --- Install attempts to write plist and call launchctl ---
 
 func TestInstallAttemptsWriteAndLoad(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
 	err := s.Install()
 	// Install will either succeed (unlikely unless daemon already configured)
 	// or fail on launchctl load. Either way, we verify it doesn't panic.
@@ -252,7 +252,7 @@ func TestInstallAttemptsWriteAndLoad(t *testing.T) {
 // --- Uninstall removes an existing plist file ---
 
 func TestUninstallRemovesExistingPlist(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
 
 	// First install to create the plist (may fail on launchctl load but writes plist)
 	_ = s.Install()
@@ -267,7 +267,7 @@ func TestUninstallRemovesExistingPlist(t *testing.T) {
 // --- Systemd stubs return errors on darwin ---
 
 func TestSystemdStubsReturnErrors(t *testing.T) {
-	s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", 8080)
+	s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", 8080)
 
 	if err := s.installSystemd(); err == nil {
 		t.Error("installSystemd() should return error on darwin")
@@ -311,12 +311,12 @@ func TestHomeDir(t *testing.T) {
 // --- logPath returns valid paths ---
 
 func TestLogPath(t *testing.T) {
-	path, err := logPath("clipbridge.log")
+	path, err := logPath("pastelocal.log")
 	if err != nil {
 		t.Errorf("logPath() error: %v", err)
 	}
-	if !strings.Contains(path, "clipbridge.log") {
-		t.Errorf("logPath() = %q, should contain clipbridge.log", path)
+	if !strings.Contains(path, "pastelocal.log") {
+		t.Errorf("logPath() = %q, should contain pastelocal.log", path)
 	}
 }
 
@@ -334,7 +334,7 @@ func TestGeneratePlistWithDifferentPorts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := New("/usr/local/bin/clipbridged", "/etc/clipbridge/config.toml", tt.port)
+			s := New("/usr/local/bin/pastelocald", "/etc/pastelocal/config.toml", tt.port)
 			content, err := s.generatePlist()
 			if err != nil {
 				t.Fatalf("generatePlist() error: %v", err)

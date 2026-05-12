@@ -113,7 +113,7 @@ func TestWriteAtomicNoTempFileLeft(t *testing.T) {
 		t.Fatalf("ReadDir: %v", err)
 	}
 	for _, e := range entries {
-		if matched, _ := filepath.Match(".clipbridge-*.tmp", e.Name()); matched {
+		if matched, _ := filepath.Match(".pastelocal-*.tmp", e.Name()); matched {
 			t.Errorf("temp file left behind: %s", e.Name())
 		}
 	}

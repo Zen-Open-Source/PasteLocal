@@ -6,29 +6,29 @@ GO = go
 GOFLAGS = -trimpath
 
 build:
-	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge ./cmd/clipbridge
-	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridged ./cmd/clipbridged
-	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge-remote ./cmd/clipbridge-remote
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal ./cmd/pastelocal
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald ./cmd/pastelocald
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote ./cmd/pastelocal-remote
 
 build-all: build-linux-amd64 build-linux-arm64 build-darwin-arm64 build-darwin-amd64
 
 build-linux-amd64:
-	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge-remote-linux-amd64 ./cmd/clipbridge-remote
-	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge-linux-amd64 ./cmd/clipbridge
-	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridged-linux-amd64 ./cmd/clipbridged
+	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote-linux-amd64 ./cmd/pastelocal-remote
+	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-linux-amd64 ./cmd/pastelocal
+	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald-linux-amd64 ./cmd/pastelocald
 
 build-linux-arm64:
-	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge-remote-linux-arm64 ./cmd/clipbridge-remote
-	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge-linux-arm64 ./cmd/clipbridge
-	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridged-linux-arm64 ./cmd/clipbridged
+	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote-linux-arm64 ./cmd/pastelocal-remote
+	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-linux-arm64 ./cmd/pastelocal
+	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald-linux-arm64 ./cmd/pastelocald
 
 build-darwin-arm64:
-	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge-darwin-arm64 ./cmd/clipbridge
-	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridged-darwin-arm64 ./cmd/clipbridged
+	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-darwin-arm64 ./cmd/pastelocal
+	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald-darwin-arm64 ./cmd/pastelocald
 
 build-darwin-amd64:
-	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridge-darwin-amd64 ./cmd/clipbridge
-	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/clipbridged-darwin-amd64 ./cmd/clipbridged
+	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-darwin-amd64 ./cmd/pastelocal
+	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald-darwin-amd64 ./cmd/pastelocald
 
 test:
 	$(GO) test -v -race -cover ./internal/...
@@ -44,8 +44,8 @@ clean:
 	rm -rf bin/
 
 install: build
-	install -m 0755 bin/clipbridge $(GOPATH)/bin/clipbridge
-	install -m 0755 bin/clipbridged $(GOPATH)/bin/clipbridged
+	install -m 0755 bin/pastelocal $(GOPATH)/bin/pastelocal
+	install -m 0755 bin/pastelocald $(GOPATH)/bin/pastelocald
 
 release:
 	goreleaser release --clean

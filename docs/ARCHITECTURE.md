@@ -2,9 +2,9 @@
 
 ## Components Overview
 
-clipbridge has four components, each with a single responsibility:
+pastelocal has four components, each with a single responsibility:
 
-### 1. Daemon (`clipbridged`)
+### 1. Daemon (`pastelocald`)
 
 A long-running HTTP server on the local machine. It binds to `127.0.0.1:7331`
 (loopback only) and exposes three endpoints:
@@ -27,13 +27,13 @@ Signal handling:
 - `SIGHUP` — reload configuration and re-read token from store
 - `SIGTERM` — graceful shutdown with 5-second drain timeout
 
-### 2. Remote Helper (`clipbridge-remote`)
+### 2. Remote Helper (`pastelocal-remote`)
 
 A one-shot CLI that runs on the remote host. It:
-1. Reads the auth token from `~/.config/clipbridge/token` (mode 0600)
+1. Reads the auth token from `~/.config/pastelocal/token` (mode 0600)
 2. Checks protocol version via `GET /version`
 3. Fetches clipboard image via `GET /clipboard` through the SSH tunnel
-4. Base64-decodes the image and writes it to `~/.cache/clipbridge/` (mode 0600)
+4. Base64-decodes the image and writes it to `~/.cache/pastelocal/` (mode 0600)
 5. Prints the absolute file path to stdout
 
 Exit codes: `0` = success, `1` = tunnel not connected, `2` = auth failure,
@@ -41,7 +41,7 @@ Exit codes: `0` = success, `1` = tunnel not connected, `2` = auth failure,
 
 The token never appears in `argv` or `environ`; it is read from a file only.
 
-### 3. Control CLI (`clipbridge`)
+### 3. Control CLI (`pastelocal`)
 
 The user-facing command-line tool built with Cobra. Subcommands:
 
@@ -62,7 +62,7 @@ The user-facing command-line tool built with Cobra. Subcommands:
 
 A Claude skill installed at `~/.claude/commands/paste.md` on the remote host.
 It instructs Claude to:
-1. Run `clipbridge-remote` via Bash
+1. Run `pastelocal-remote` via Bash
 2. Read the resulting image file
 3. Delete the file
 4. Confirm to the user: "Got it, image attached."
@@ -94,13 +94,13 @@ It instructs Claude to:
 │               127.0.0.1:7331                              │
 │                      │                                    │
 │                ┌─────▼──────┐    ┌──────────────────┐    │
-│                │ clipbridge- │    │  token file      │    │
+│                │ pastelocal- │    │  token file      │    │
 │                │ remote     │◀──▶│  (mode 0600)     │    │
 │                └─────┬──────┘    └──────────────────┘    │
 │                      │                                    │
 │                ┌─────▼──────┐                             │
 │                │ ~/.cache/  │                             │
-│                │ clipbridge/│                             │
+│                │ pastelocal/│                             │
 │                └────────────┘                             │
 │                                                          │
 │  ┌──────────────────────────────────────┐                │
@@ -120,7 +120,7 @@ untrusted. The token file is mode 0600 (owner-only), and the cached images
 are also mode 0600.
 
 **Between boundaries:** The SSH tunnel provides encryption and integrity. The
-tunnel is established by the user's SSH client, not by clipbridge.
+tunnel is established by the user's SSH client, not by pastelocal.
 
 ---
 
@@ -157,7 +157,7 @@ Authorization: Bearer <token>
   "ok": false,
   "code": "CB2001",
   "error": "Invalid auth token",
-  "fix_hint": "Re-run `clipbridge add-host <host>` to sync the token."
+  "fix_hint": "Re-run `pastelocal add-host <host>` to sync the token."
 }
 ```
 
@@ -190,31 +190,31 @@ User types /paste in Claude on remote host
 Claude reads ~/.claude/commands/paste.md
          │
          ▼
-Claude runs: clipbridge-remote
+Claude runs: pastelocal-remote
          │
          ▼
-clipbridge-remote reads token from ~/.config/clipbridge/token
+pastelocal-remote reads token from ~/.config/pastelocal/token
          │
          ▼
-clipbridge-remote → GET /version → clipbridged (via SSH tunnel)
+pastelocal-remote → GET /version → pastelocald (via SSH tunnel)
          │  (check protocol compatibility)
          ▼
-clipbridge-remote → GET /clipboard → clipbridged (via SSH tunnel)
+pastelocal-remote → GET /clipboard → pastelocald (via SSH tunnel)
          │
-         ├─ clipbridged: acquire semaphore slot
-         ├─ clipbridged: check rate limit
-         ├─ clipbridged: validate Bearer token (constant-time compare)
-         ├─ clipbridged: lock mutex, read OS clipboard via platform tool
-         ├─ clipbridged: check image size ≤ max_image_bytes
-         ├─ clipbridged: base64-encode PNG
-         ├─ clipbridged: write audit log (if configured)
-         └─ clipbridged: release mutex and semaphore
+         ├─ pastelocald: acquire semaphore slot
+         ├─ pastelocald: check rate limit
+         ├─ pastelocald: validate Bearer token (constant-time compare)
+         ├─ pastelocald: lock mutex, read OS clipboard via platform tool
+         ├─ pastelocald: check image size ≤ max_image_bytes
+         ├─ pastelocald: base64-encode PNG
+         ├─ pastelocald: write audit log (if configured)
+         └─ pastelocald: release mutex and semaphore
          │
          ▼
-clipbridge-remote receives JSON response
+pastelocal-remote receives JSON response
          │
          ├─ base64-decode image
-         ├─ write to ~/.cache/clipbridge/clipbridge-<ts>-<rand6>.png (0600)
+         ├─ write to ~/.cache/pastelocal/pastelocal-<ts>-<rand6>.png (0600)
          └─ print absolute path to stdout
          │
          ▼
@@ -232,9 +232,9 @@ Claude confirms: "Got it, image attached."
 ## Configuration System
 
 **File format:** TOML  
-**Default path:** `~/.config/clipbridge/config.toml`  
-**Override:** `--config` flag or `CLIPBRIDGE_CONFIG_DIR` env var  
-**Env overrides:** `CLIPBRIDGE_PORT`, `CLIPBRIDGE_LOG_LEVEL`
+**Default path:** `~/.config/pastelocal/config.toml`  
+**Override:** `--config` flag or `PASTELOCAL_CONFIG_DIR` env var  
+**Env overrides:** `PASTELOCAL_PORT`, `PASTELOCAL_LOG_LEVEL`
 
 ### Default values
 
@@ -259,7 +259,7 @@ Each host is stored as a nested table:
 added_at = 2025-01-15T10:30:00Z
 remote_port = 7331
 remote_user = "deploy"
-remote_path = "~/.local/bin/clipbridge-remote"
+remote_path = "~/.local/bin/pastelocal-remote"
 termius = false
 ```
 
@@ -272,22 +272,22 @@ triggers a live reload without restart.
 
 ### macOS (launchd)
 
-- **Plist path:** `~/Library/LaunchAgents/com.clipbridge.daemon.plist`
-- **Label:** `com.clipbridge.daemon`
+- **Plist path:** `~/Library/LaunchAgents/com.pastelocal.daemon.plist`
+- **Label:** `com.pastelocal.daemon`
 - **RunAtLoad:** true
 - **KeepAlive:** true
-- **Stdout log:** `~/Library/Logs/clipbridge.log`
-- **Stderr log:** `~/Library/Logs/clipbridge.err`
+- **Stdout log:** `~/Library/Logs/pastelocal.log`
+- **Stderr log:** `~/Library/Logs/pastelocal.err`
 - **Commands:** `launchctl load/unload`, `launchctl print` for PID
 
 ### Linux (systemd)
 
-- **Unit path:** `~/.config/systemd/user/clipbridge.service`
+- **Unit path:** `~/.config/systemd/user/pastelocal.service`
 - **Type:** `simple`
 - **Restart:** `on-failure` (10s delay)
 - **WantedBy:** `default.target`
 - **Commands:** `systemctl --user start/stop/restart/enable/status`
-- **Logs:** `journalctl --user -u clipbridge.service`
+- **Logs:** `journalctl --user -u pastelocal.service`
 
-Both service types are installed and managed by `clipbridge init`,
-`clipbridge start`, `clipbridge stop`, and `clipbridge uninstall`.
+Both service types are installed and managed by `pastelocal init`,
+`pastelocal start`, `pastelocal stop`, and `pastelocal uninstall`.

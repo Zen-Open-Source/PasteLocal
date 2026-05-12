@@ -97,7 +97,7 @@ func TestPrintTermiusInstructionsContent(t *testing.T) {
 		"Local Port: 7331",
 		"Remote: 127.0.0.1",
 		"Remote Port: 7331",
-		"clipbridge add-host myhost --finish",
+		"pastelocal add-host myhost --finish",
 	}
 
 	for _, sub := range expectedSubstrings {
@@ -179,7 +179,7 @@ func TestDirOf(t *testing.T) {
 		path     string
 		expected string
 	}{
-		{"~/.local/bin/clipbridge-remote", "~/.local/bin"},
+		{"~/.local/bin/pastelocal-remote", "~/.local/bin"},
 		{"/usr/local/bin/app", "/usr/local/bin"},
 		{"single", "."},
 		{"/", ""},
@@ -253,7 +253,7 @@ func TestTermiusOutputContainsKeys(t *testing.T) {
 		"Local Port: 7331",
 		"Remote: 127.0.0.1",
 		"Remote Port: 7331",
-		"clipbridge add-host myhost --finish",
+		"pastelocal add-host myhost --finish",
 	}
 
 	_ = port
@@ -456,11 +456,11 @@ func TestInstallerDefaultBinPath(t *testing.T) {
 // --- Installer custom binPath ---
 
 func TestInstallerCustomBinPath(t *testing.T) {
-	opts := Options{RemotePath: "/opt/bin/clipbridge-remote"}
+	opts := Options{RemotePath: "/opt/bin/pastelocal-remote"}
 	inst := NewInstaller(opts, nil)
 
-	if got := inst.binPath(); got != "/opt/bin/clipbridge-remote" {
-		t.Errorf("binPath() = %q, want %q", got, "/opt/bin/clipbridge-remote")
+	if got := inst.binPath(); got != "/opt/bin/pastelocal-remote" {
+		t.Errorf("binPath() = %q, want %q", got, "/opt/bin/pastelocal-remote")
 	}
 }
 
@@ -635,11 +635,11 @@ func TestRemoveSSHConfigWithTempDir(t *testing.T) {
 	}
 
 	// Write an SSH config with a RemoteForward entry that includes
-	// the clipbridge marker (as the editor adds it).
+	// the pastelocal marker (as the editor adds it).
 	sshCfgPath := filepath.Join(sshDir, "config")
 	initialContent := `Host testhost
   HostName test.example.com
-  RemoteForward 7331 127.0.0.1:7331  # clipbridge:testhost:remoteforward
+  RemoteForward 7331 127.0.0.1:7331  # pastelocal:testhost:remoteforward
 `
 	if err := os.WriteFile(sshCfgPath, []byte(initialContent), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -666,8 +666,8 @@ func TestRemoveSSHConfigWithTempDir(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	resultStr := string(content)
-	if strings.Contains(resultStr, "RemoteForward") && strings.Contains(resultStr, "clipbridge:testhost:remoteforward") {
-		t.Errorf("expected clipbridge RemoteForward to be removed, got:\n%s", resultStr)
+	if strings.Contains(resultStr, "RemoteForward") && strings.Contains(resultStr, "pastelocal:testhost:remoteforward") {
+		t.Errorf("expected pastelocal RemoteForward to be removed, got:\n%s", resultStr)
 	}
 }
 
@@ -815,8 +815,8 @@ func TestDetectRemoteArchSSHFails(t *testing.T) {
 // --- Default constants ---
 
 func TestDefaultConstants(t *testing.T) {
-	if defaultRemoteBinPath != "~/.local/bin/clipbridge-remote" {
-		t.Errorf("defaultRemoteBinPath = %q, want ~/.local/bin/clipbridge-remote", defaultRemoteBinPath)
+	if defaultRemoteBinPath != "~/.local/bin/pastelocal-remote" {
+		t.Errorf("defaultRemoteBinPath = %q, want ~/.local/bin/pastelocal-remote", defaultRemoteBinPath)
 	}
 	if defaultPort != 7331 {
 		t.Errorf("defaultPort = %d, want 7331", defaultPort)
@@ -1106,7 +1106,7 @@ func TestRemoveSSHConfigPreservesOtherContent(t *testing.T) {
 	initialContent := `Host testhost
   HostName test.example.com
   User admin
-  RemoteForward 7331 127.0.0.1:7331  # clipbridge:testhost:remoteforward
+  RemoteForward 7331 127.0.0.1:7331  # pastelocal:testhost:remoteforward
   IdentityFile ~/.ssh/id_rsa
 `
 	if err := os.WriteFile(sshCfgPath, []byte(initialContent), 0644); err != nil {
@@ -1132,8 +1132,8 @@ func TestRemoveSSHConfigPreservesOtherContent(t *testing.T) {
 	}
 	cfgStr := string(content)
 	// RemoteForward should be gone
-	if strings.Contains(cfgStr, "clipbridge:testhost:remoteforward") {
-		t.Errorf("expected clipbridge RemoteForward to be removed, got:\n%s", cfgStr)
+	if strings.Contains(cfgStr, "pastelocal:testhost:remoteforward") {
+		t.Errorf("expected pastelocal RemoteForward to be removed, got:\n%s", cfgStr)
 	}
 	// But HostName, User, IdentityFile should remain
 	if !strings.Contains(cfgStr, "HostName test.example.com") {
@@ -1256,7 +1256,7 @@ func TestUninstallNonTermiusRemovesSSHConfig(t *testing.T) {
 	sshCfgPath := filepath.Join(sshDir, "config")
 	configContent := `Host testhost
   HostName test.example.com
-  RemoteForward 7331 127.0.0.1:7331  # clipbridge:testhost:remoteforward
+  RemoteForward 7331 127.0.0.1:7331  # pastelocal:testhost:remoteforward
 `
 	if err := os.WriteFile(sshCfgPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -1286,7 +1286,7 @@ func TestUninstallNonTermiusRemovesSSHConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	if strings.Contains(string(content), "clipbridge:testhost:remoteforward") {
+	if strings.Contains(string(content), "pastelocal:testhost:remoteforward") {
 		t.Errorf("expected RemoteForward to be removed after uninstall, got:\n%s", string(content))
 	}
 }
@@ -1443,7 +1443,7 @@ func TestInstallWithCustomRemotePath(t *testing.T) {
 	opts := Options{
 		Host:           "nonexistent.invalid",
 		Port:           7331,
-		RemotePath:     "/opt/custom/bin/clipbridge-remote",
+		RemotePath:     "/opt/custom/bin/pastelocal-remote",
 		LocalBinaryDir: tmpDir,
 		TokenPath:      filepath.Join(tmpDir, "token"),
 		SkillPath:      filepath.Join(tmpDir, "paste.md"),

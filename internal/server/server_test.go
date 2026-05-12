@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/config"
-	"github.com/clipbridge/clipbridge/internal/proto"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/proto"
 )
 
 // mockReader implements clipboard.Reader for testing.

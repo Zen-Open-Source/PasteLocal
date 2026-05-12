@@ -58,7 +58,7 @@ func TestIntegration_KeychainRoundTrip(t *testing.T) {
 // TestIntegration_TokenFileRoundTrip tests the token file lifecycle
 // (store + retrieve + delete) against a real filesystem.
 func TestIntegration_TokenFileRoundTrip(t *testing.T) {
-	dir, err := os.MkdirTemp("", "clipbridge-auth-integration-*")
+	dir, err := os.MkdirTemp("", "pastelocal-auth-integration-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}

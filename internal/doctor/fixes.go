@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/config"
-	"github.com/clipbridge/clipbridge/internal/hostinstall"
-	"github.com/clipbridge/clipbridge/internal/sshconfig"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/hostinstall"
+	"github.com/pastelocal/pastelocal/internal/sshconfig"
 )
 
 // defaultTokenPathOverride allows tests to override the token path.
@@ -44,7 +44,7 @@ func fixMissingKeychain(cfg *config.Config) error {
 	return nil
 }
 
-// fixMissingRemoteBinary re-copies the clipbridge-remote binary to the host via SCP.
+// fixMissingRemoteBinary re-copies the pastelocal-remote binary to the host via SCP.
 func fixMissingRemoteBinary(cfg *config.Config, alias string) error {
 	hostCfg, ok := cfg.Hosts[alias]
 	if !ok {
@@ -61,8 +61,8 @@ func fixMissingRemoteBinary(cfg *config.Config, alias string) error {
 	}
 
 	// Find the local binary for this architecture.
-	binaryName := fmt.Sprintf("clipbridge-remote-%s", arch)
-	localBinaryDir := filepath.Join(userHomeDir(), ".local", "share", "clipbridge")
+	binaryName := fmt.Sprintf("pastelocal-remote-%s", arch)
+	localBinaryDir := filepath.Join(userHomeDir(), ".local", "share", "pastelocal")
 	localBinary := filepath.Join(localBinaryDir, binaryName)
 
 	// Check if the binary exists at the standard embedded location.
@@ -191,7 +191,7 @@ func fixRemoteTokenPerms(cfg *config.Config, alias string) error {
 	}
 
 	sshHost := sshHostStr(hostCfg, alias)
-	const remoteTokenPath = "~/.config/clipbridge/token"
+	const remoteTokenPath = "~/.config/pastelocal/token"
 
 	if err := hostinstall.SetRemotePerms(sshHost, remoteTokenPath, "0600"); err != nil {
 		return fmt.Errorf("set remote token permissions: %w", err)
@@ -206,8 +206,8 @@ func findLocalSkillPath() string {
 
 	// Try standard locations.
 	candidates := []string{
-		filepath.Join(home, ".config", "clipbridge", "skill", "paste.md"),
-		filepath.Join(home, ".local", "share", "clipbridge", "skill", "paste.md"),
+		filepath.Join(home, ".config", "pastelocal", "skill", "paste.md"),
+		filepath.Join(home, ".local", "share", "pastelocal", "skill", "paste.md"),
 	}
 
 	for _, p := range candidates {

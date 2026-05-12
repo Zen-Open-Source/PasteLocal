@@ -222,8 +222,8 @@ func TestDefaultTokenPath(t *testing.T) {
 	if !strings.Contains(path, ".config") {
 		t.Errorf("DefaultTokenPath() = %q, expected to contain .config", path)
 	}
-	if !strings.Contains(path, "clipbridge") {
-		t.Errorf("DefaultTokenPath() = %q, expected to contain clipbridge", path)
+	if !strings.Contains(path, "pastelocal") {
+		t.Errorf("DefaultTokenPath() = %q, expected to contain pastelocal", path)
 	}
 	if !strings.HasSuffix(path, "token") {
 		t.Errorf("DefaultTokenPath() = %q, expected to end with token", path)

@@ -1,5 +1,5 @@
 // Package doctor implements diagnostic checks for the
-// `clipbridge doctor` command. It verifies that the daemon is running,
+// `pastelocal doctor` command. It verifies that the daemon is running,
 // the token store is healthy, the clipboard tool is available, and each
 // configured host is reachable with the correct remote setup.
 package doctor
@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/clipbridge/clipbridge/internal/config"
+	"github.com/pastelocal/pastelocal/internal/config"
 )
 
 // CheckResult represents a single diagnostic check result.
@@ -17,7 +17,7 @@ type CheckResult struct {
 	Name    string // e.g., "Daemon running"
 	Passed  bool
 	Detail  string // e.g., "[pid 12345, port 7331]"
-	FixHint string // e.g., "Run `clipbridge start`"
+	FixHint string // e.g., "Run `pastelocal start`"
 	AutoFix bool   // whether --fix can handle this
 }
 

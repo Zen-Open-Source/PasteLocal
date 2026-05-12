@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	launchdLabel    = "com.clipbridge.daemon"
-	launchdPlistName = "com.clipbridge.daemon.plist"
+	launchdLabel    = "com.pastelocal.daemon"
+	launchdPlistName = "com.pastelocal.daemon.plist"
 )
 
 // plistDoc represents the top-level XML document for a launchd plist.
@@ -83,11 +83,11 @@ func homeDir() (string, error) {
 
 // generatePlist generates the launchd plist content for the service.
 func (s *Service) generatePlist() ([]byte, error) {
-	stdoutPath, err := logPath("clipbridge.log")
+	stdoutPath, err := logPath("pastelocal.log")
 	if err != nil {
 		return nil, err
 	}
-	stderrPath, err := logPath("clipbridge.err")
+	stderrPath, err := logPath("pastelocal.err")
 	if err != nil {
 		return nil, err
 	}

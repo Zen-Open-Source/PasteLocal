@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/clipboard"
-	"github.com/clipbridge/clipbridge/internal/config"
-	"github.com/clipbridge/clipbridge/internal/server"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/clipboard"
+	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/server"
 )
 
 // version is set via ldflags at build time.
@@ -27,8 +27,8 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "clipbridged",
-	Short:   "Clipbridge local clipboard daemon",
+	Use:     "pastelocald",
+	Short:   "Pastelocal local clipboard daemon",
 	Version: version,
 	RunE:    run,
 }
@@ -76,7 +76,7 @@ func run(cmd *cobra.Command, args []string) error {
 	srv := server.New(cfg, cfgPath, tokenStore, reader, logger)
 
 	pid := os.Getpid()
-	logger.Info("clipbridged started",
+	logger.Info("pastelocald started",
 		"addr", fmt.Sprintf("127.0.0.1:%d", cfg.Port),
 		"transport", cfg.Transport,
 		"pid", pid,
@@ -107,7 +107,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("server: %w", err)
 	}
 
-	logger.Info("clipbridged stopped")
+	logger.Info("pastelocald stopped")
 	return nil
 }
 

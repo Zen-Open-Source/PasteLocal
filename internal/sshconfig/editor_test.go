@@ -33,7 +33,7 @@ func TestAddRemoteForwardToNonExistentHost(t *testing.T) {
 	if !strings.Contains(rendered, "RemoteForward 8080 127.0.0.1:8080") {
 		t.Error("rendered config missing RemoteForward line")
 	}
-	marker := "# clipbridge:myhost:remoteforward"
+	marker := "# pastelocal:myhost:remoteforward"
 	if !strings.Contains(rendered, marker) {
 		t.Error("rendered config missing marker comment")
 	}
@@ -61,8 +61,8 @@ func TestAddRemoteForwardToExistingHost(t *testing.T) {
 }
 
 func TestAddRemoteForwardAlreadyPresent(t *testing.T) {
-	// Create config with an existing clipbridge RemoteForward.
-	input := "Host myhost\n  HostName example.com\n  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myhost:remoteforward"
+	// Create config with an existing pastelocal RemoteForward.
+	input := "Host myhost\n  HostName example.com\n  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myhost:remoteforward"
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -102,7 +102,7 @@ func TestAddRemoteForwardConflictingPort(t *testing.T) {
 }
 
 func TestRemoveRemoteForwardRemovesLine(t *testing.T) {
-	input := "Host myhost\n  HostName example.com\n  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myhost:remoteforward\n  User alice"
+	input := "Host myhost\n  HostName example.com\n  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myhost:remoteforward\n  User alice"
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -129,7 +129,7 @@ func TestRemoveRemoteForwardRemovesLine(t *testing.T) {
 }
 
 func TestRemoveRemoteForwardRemovesEmptyBlock(t *testing.T) {
-	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myhost:remoteforward"
+	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myhost:remoteforward"
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -151,7 +151,7 @@ func TestRemoveRemoteForwardRemovesEmptyBlock(t *testing.T) {
 }
 
 func TestHasRemoteForwardDetectsPresence(t *testing.T) {
-	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myhost:remoteforward"
+	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myhost:remoteforward"
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -169,7 +169,7 @@ func TestHasRemoteForwardDetectsPresence(t *testing.T) {
 }
 
 func TestHasRemoteForwardNoMarker(t *testing.T) {
-	// A RemoteForward without the clipbridge marker should not be detected.
+	// A RemoteForward without the pastelocal marker should not be detected.
 	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080"
 	cfg, err := Parse(input)
 	if err != nil {
@@ -222,7 +222,7 @@ func TestCommentMarkerAdded(t *testing.T) {
 	}
 
 	rendered := cfg.Render()
-	marker := "# clipbridge:myhost:remoteforward"
+	marker := "# pastelocal:myhost:remoteforward"
 	if !strings.Contains(rendered, marker) {
 		t.Errorf("rendered config missing marker %q, got: %q", marker, rendered)
 	}
@@ -298,7 +298,7 @@ func TestRemoveRemoteForwardNonExistentHost(t *testing.T) {
 }
 
 func TestRemoveRemoteForwardNonExistentPort(t *testing.T) {
-	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myhost:remoteforward"
+	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myhost:remoteforward"
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

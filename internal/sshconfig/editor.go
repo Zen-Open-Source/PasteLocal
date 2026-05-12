@@ -17,12 +17,12 @@ func FindBlock(cfg *Config, name string) *Block {
 
 // AddRemoteForward adds a RemoteForward line to the specified host block.
 // If the block doesn't exist, it appends a new block at the end.
-// Comment marker: "# clipbridge:<alias>:remoteforward"
+// Comment marker: "# pastelocal:<alias>:remoteforward"
 // Returns an error if a conflicting RemoteForward for the same port already exists.
 func AddRemoteForward(cfg *Config, alias string, port int) error {
 	blk := FindBlock(cfg, alias)
 	arg := fmt.Sprintf("%d 127.0.0.1:%d", port, port)
-	marker := fmt.Sprintf("# clipbridge:%s:remoteforward", alias)
+	marker := fmt.Sprintf("# pastelocal:%s:remoteforward", alias)
 
 	if blk != nil {
 		// Check existing RemoteForward lines in the block.
@@ -101,7 +101,7 @@ func AddRemoteForward(cfg *Config, alias string, port int) error {
 	return nil
 }
 
-// RemoveRemoteForward removes the clipbridge RemoteForward line from the host block.
+// RemoveRemoteForward removes the pastelocal RemoteForward line from the host block.
 // Removes the entire Host block if it only contained the RemoteForward line.
 func RemoveRemoteForward(cfg *Config, alias string, port int) error {
 	blk := FindBlock(cfg, alias)
@@ -109,7 +109,7 @@ func RemoveRemoteForward(cfg *Config, alias string, port int) error {
 		return nil
 	}
 
-	marker := fmt.Sprintf("# clipbridge:%s:remoteforward", alias)
+	marker := fmt.Sprintf("# pastelocal:%s:remoteforward", alias)
 
 	// Find the RemoteForward line with our marker for the given port.
 	var foundIdx int = -1
@@ -159,14 +159,14 @@ func RemoveRemoteForward(cfg *Config, alias string, port int) error {
 }
 
 // HasRemoteForward checks if the host block has a RemoteForward for the port
-// with the clipbridge marker.
+// with the pastelocal marker.
 func HasRemoteForward(cfg *Config, alias string, port int) bool {
 	blk := FindBlock(cfg, alias)
 	if blk == nil {
 		return false
 	}
 
-	marker := fmt.Sprintf("# clipbridge:%s:remoteforward", alias)
+	marker := fmt.Sprintf("# pastelocal:%s:remoteforward", alias)
 	for _, l := range blk.Lines {
 		if strings.ToLower(l.Keyword) == "remoteforward" &&
 			isSamePort(l.Argument, port) &&

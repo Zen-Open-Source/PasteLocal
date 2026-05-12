@@ -14,11 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/config"
-	"github.com/clipbridge/clipbridge/internal/doctor"
-	"github.com/clipbridge/clipbridge/internal/hostinstall"
-	"github.com/clipbridge/clipbridge/internal/service"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/doctor"
+	"github.com/pastelocal/pastelocal/internal/hostinstall"
+	"github.com/pastelocal/pastelocal/internal/service"
 )
 
 // version is set via ldflags at build time.
@@ -35,10 +35,10 @@ func main() {
 	}
 }
 
-// rootCmd is the base command for clipbridge CLI.
+// rootCmd is the base command for pastelocal CLI.
 var rootCmd = &cobra.Command{
-	Use:     "clipbridge",
-	Short:   "Clipbridge — secure local-to-remote clipboard bridge",
+	Use:     "pastelocal",
+	Short:   "Pastelocal — secure local-to-remote clipboard bridge",
 	Version: version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -82,19 +82,19 @@ func newLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }
 
-// daemonBinaryPath returns the path to the clipbridged binary,
+// daemonBinaryPath returns the path to the pastelocald binary,
 // searching in the same directory as the current executable.
 func daemonBinaryPath() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "clipbridged"
+		return "pastelocald"
 	}
 	dir := filepath.Dir(exe)
-	candidate := filepath.Join(dir, "clipbridged")
+	candidate := filepath.Join(dir, "pastelocald")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate
 	}
-	return "clipbridged"
+	return "pastelocald"
 }
 
 // findSkillPath searches for the paste.md skill file.
@@ -104,8 +104,8 @@ func findSkillPath() string {
 		return ""
 	}
 	candidates := []string{
-		filepath.Join(home, ".config", "clipbridge", "skill", "paste.md"),
-		filepath.Join(home, ".local", "share", "clipbridge", "skill", "paste.md"),
+		filepath.Join(home, ".config", "pastelocal", "skill", "paste.md"),
+		filepath.Join(home, ".local", "share", "pastelocal", "skill", "paste.md"),
 	}
 	exe, err := os.Executable()
 	if err == nil {
@@ -122,19 +122,19 @@ func findSkillPath() string {
 }
 
 // findLocalBinaryDir returns the directory containing the
-// clipbridge-remote-* binaries.
+// pastelocal-remote-* binaries.
 func findLocalBinaryDir() string {
 	exe, err := os.Executable()
 	if err == nil {
 		dir := filepath.Dir(exe)
-		if _, err := os.Stat(filepath.Join(dir, "clipbridge-remote-amd64")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "pastelocal-remote-amd64")); err == nil {
 			return dir
 		}
 	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		dir := filepath.Join(home, ".local", "share", "clipbridge")
-		if _, err := os.Stat(filepath.Join(dir, "clipbridge-remote-amd64")); err == nil {
+		dir := filepath.Join(home, ".local", "share", "pastelocal")
+		if _, err := os.Stat(filepath.Join(dir, "pastelocal-remote-amd64")); err == nil {
 			return dir
 		}
 	}
@@ -150,7 +150,7 @@ func newService(cfg *config.Config) *service.Service {
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize clipbridge configuration and start the daemon",
+	Short: "Initialize pastelocal configuration and start the daemon",
 	GroupID: "daemon",
 	RunE:  runInit,
 }
@@ -213,7 +213,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	_, pid, _ := svc.Status()
 
 	// Print success message.
-	fmt.Printf("clipbridge initialized successfully!\n")
+	fmt.Printf("pastelocal initialized successfully!\n")
 	fmt.Printf("  port: %d\n", cfg.Port)
 	fmt.Printf("  token location: %s\n", tokenLocation)
 	fmt.Printf("  daemon PID: %d\n", pid)
@@ -319,7 +319,7 @@ func runAddHost(cmd *cobra.Command, args []string) error {
 
 var removeHostCmd = &cobra.Command{
 	Use:   "remove-host <alias>",
-	Short: "Remove a remote host from clipbridge",
+	Short: "Remove a remote host from pastelocal",
 	GroupID: "host",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runRemoveHost,
@@ -428,7 +428,7 @@ func runListHosts(cmd *cobra.Command, args []string) error {
 
 	// 2. Print table of hosts.
 	if len(cfg.Hosts) == 0 {
-		fmt.Println("No hosts configured. Run `clipbridge add-host <alias>` to add one.")
+		fmt.Println("No hosts configured. Run `pastelocal add-host <alias>` to add one.")
 		return nil
 	}
 
@@ -453,7 +453,7 @@ func runListHosts(cmd *cobra.Command, args []string) error {
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show clipbridge daemon status",
+	Short: "Show pastelocal daemon status",
 	GroupID: "diagnostic",
 	RunE:  runStatus,
 }
@@ -545,7 +545,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Human-readable output (spec §11.4 style).
-	fmt.Printf("clipbridge %s — %s\n", version, stateStr)
+	fmt.Printf("pastelocal %s — %s\n", version, stateStr)
 	fmt.Printf("  port: %d (%s, loopback)\n", cfg.Port, cfg.Transport)
 	if len(hostStatuses) > 0 {
 		var parts []string
@@ -629,7 +629,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	if failed > 0 {
-		fmt.Printf("%d issue(s) found. Run `clipbridge doctor --fix` to auto-fix where safe.\n", failed)
+		fmt.Printf("%d issue(s) found. Run `pastelocal doctor --fix` to auto-fix where safe.\n", failed)
 	} else {
 		fmt.Println("All checks passed.")
 	}
@@ -645,7 +645,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 var logsCmd = &cobra.Command{
 	Use:   "logs",
-	Short: "Show clipbridge daemon logs",
+	Short: "Show pastelocal daemon logs",
 	GroupID: "diagnostic",
 	RunE:  runLogs,
 }
@@ -677,14 +677,14 @@ func runLogsDarwin() error {
 	if err != nil {
 		return fail("cannot determine home directory: %v", err)
 	}
-	logFile := filepath.Join(home, "Library", "Logs", "clipbridge.log")
+	logFile := filepath.Join(home, "Library", "Logs", "pastelocal.log")
 	return tailLogFile(logFile)
 }
 
 func runLogsLinux() error {
 	// Use journalctl for systemd-based systems.
 	if logsFollow {
-		cmd := exec.Command("journalctl", "--user", "-u", "clipbridge.service", "-f", "-n", fmt.Sprintf("%d", logsLines))
+		cmd := exec.Command("journalctl", "--user", "-u", "pastelocal.service", "-f", "-n", fmt.Sprintf("%d", logsLines))
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -692,7 +692,7 @@ func runLogsLinux() error {
 		}
 		return nil
 	}
-	cmd := exec.Command("journalctl", "--user", "-u", "clipbridge.service", "-n", fmt.Sprintf("%d", logsLines), "--no-pager")
+	cmd := exec.Command("journalctl", "--user", "-u", "pastelocal.service", "-n", fmt.Sprintf("%d", logsLines), "--no-pager")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -737,21 +737,21 @@ func tailLogFile(path string) error {
 
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start the clipbridge daemon",
+	Short: "Start the pastelocal daemon",
 	GroupID: "daemon",
 	RunE:  runStart,
 }
 
 var stopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop the clipbridge daemon",
+	Short: "Stop the pastelocal daemon",
 	GroupID: "daemon",
 	RunE:  runStop,
 }
 
 var restartCmd = &cobra.Command{
 	Use:   "restart",
-	Short: "Restart the clipbridge daemon",
+	Short: "Restart the pastelocal daemon",
 	GroupID: "daemon",
 	RunE:  runRestart,
 }
@@ -771,7 +771,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err := svc.Start(); err != nil {
 		return fail("failed to start daemon: %v", err)
 	}
-	fmt.Println("clipbridge daemon started.")
+	fmt.Println("pastelocal daemon started.")
 	return nil
 }
 
@@ -784,7 +784,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 	if err := svc.Stop(); err != nil {
 		return fail("failed to stop daemon: %v", err)
 	}
-	fmt.Println("clipbridge daemon stopped.")
+	fmt.Println("pastelocal daemon stopped.")
 	return nil
 }
 
@@ -797,7 +797,7 @@ func runRestart(cmd *cobra.Command, args []string) error {
 	if err := svc.Restart(); err != nil {
 		return fail("failed to restart daemon: %v", err)
 	}
-	fmt.Println("clipbridge daemon restarted.")
+	fmt.Println("pastelocal daemon restarted.")
 	return nil
 }
 
@@ -844,7 +844,7 @@ func runRotateToken(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("Run:")
 	for alias := range cfg.Hosts {
-		fmt.Printf("  clipbridge add-host %s --update-token-only\n", alias)
+		fmt.Printf("  pastelocal add-host %s --update-token-only\n", alias)
 	}
 	return nil
 }
@@ -853,7 +853,7 @@ func runRotateToken(cmd *cobra.Command, args []string) error {
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Uninstall clipbridge completely",
+	Short: "Uninstall pastelocal completely",
 	GroupID: "daemon",
 	RunE:  runUninstall,
 }
@@ -892,6 +892,6 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// 5. Print success.
-	fmt.Println("clipbridge uninstalled successfully.")
+	fmt.Println("pastelocal uninstalled successfully.")
 	return nil
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	cliperr "github.com/clipbridge/clipbridge/internal/errors"
+	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 )
 
 // createTestPNG creates a small 1x1 red PNG image for testing.

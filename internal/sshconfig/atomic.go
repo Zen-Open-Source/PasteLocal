@@ -17,7 +17,7 @@ func WriteAtomic(path string, content string) error {
 
 	// Use the same directory for the temp file to ensure the rename
 	// is on the same filesystem.
-	tmp, err := os.CreateTemp(dir, ".clipbridge-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".pastelocal-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

@@ -17,7 +17,7 @@ const (
 	DefaultMaxImageBytes   = 52428800 // 50 MiB
 	DefaultMaxInFlight     = 4
 	DefaultRateLimitPerMin = 60
-	DefaultConfigDir       = "~/.config/clipbridge"
+	DefaultConfigDir       = "~/.config/pastelocal"
 	DefaultConfigFile      = "config.toml"
 )
 
@@ -67,10 +67,10 @@ func Default() *Config {
 }
 
 // ConfigDir returns the expanded configuration directory path.
-// It checks the CLIPBRIDGE_CONFIG_DIR environment variable first,
-// then falls back to ~/.config/clipbridge/.
+// It checks the PASTELOCAL_CONFIG_DIR environment variable first,
+// then falls back to ~/.config/pastelocal/.
 func ConfigDir() string {
-	if dir := os.Getenv("CLIPBRIDGE_CONFIG_DIR"); dir != "" {
+	if dir := os.Getenv("PASTELOCAL_CONFIG_DIR"); dir != "" {
 		return expandHome(dir)
 	}
 	return expandHome(DefaultConfigDir)
@@ -121,7 +121,7 @@ func Save(c *Config, path string) error {
 	}
 
 	// Write to temp file in the same directory to ensure atomic rename.
-	tmp, err := os.CreateTemp(dir, "clipbridge-config-*")
+	tmp, err := os.CreateTemp(dir, "pastelocal-config-*")
 	if err != nil {
 		return fmt.Errorf("config: failed to create temp file: %w", err)
 	}
@@ -192,13 +192,13 @@ func mergeDefaults(cfg *Config) {
 
 // applyEnvOverrides applies environment variable overrides to the config.
 func applyEnvOverrides(cfg *Config) {
-	if v := os.Getenv("CLIPBRIDGE_PORT"); v != "" {
+	if v := os.Getenv("PASTELOCAL_PORT"); v != "" {
 		var port int
 		if _, err := fmt.Sscanf(v, "%d", &port); err == nil && port > 0 {
 			cfg.Port = port
 		}
 	}
-	if v := os.Getenv("CLIPBRIDGE_LOG_LEVEL"); v != "" {
+	if v := os.Getenv("PASTELOCAL_LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
 	}
 }

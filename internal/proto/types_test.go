@@ -100,7 +100,7 @@ func TestErrorResponseSerialization(t *testing.T) {
 		OK:      false,
 		Code:    "E_NO_PEER",
 		Error:   "no peer connected",
-		FixHint: "run 'clipbridge pair'",
+		FixHint: "run 'pastelocal pair'",
 	}
 
 	data, err := json.Marshal(orig)

@@ -1,4 +1,4 @@
-// Package hostinstall handles installing the clipbridge remote helper,
+// Package hostinstall handles installing the pastelocal remote helper,
 // skill, and token on remote hosts via SSH/SCP.
 package hostinstall
 
@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/clipbridge/clipbridge/internal/sshconfig"
+	"github.com/pastelocal/pastelocal/internal/sshconfig"
 )
 
 const (
-	defaultRemoteBinPath = "~/.local/bin/clipbridge-remote"
+	defaultRemoteBinPath = "~/.local/bin/pastelocal-remote"
 	defaultPort          = 7331
 )
 
@@ -28,13 +28,13 @@ type Options struct {
 	Reinstall       bool   // reinstall even if already installed
 	UpdateTokenOnly bool   // only scp the new token
 	SeparateToken   bool   // generate per-host token
-	RemotePath      string // default: ~/.local/bin/clipbridge-remote
-	LocalBinaryDir  string // directory containing local clipbridge-remote binary
+	RemotePath      string // default: ~/.local/bin/pastelocal-remote
+	LocalBinaryDir  string // directory containing local pastelocal-remote binary
 	TokenPath       string // local path to the token file
 	SkillPath       string // local path to the skill file (paste.md)
 }
 
-// Installer performs the installation of clipbridge components on a remote host.
+// Installer performs the installation of pastelocal components on a remote host.
 type Installer struct {
 	opts   Options
 	logger *slog.Logger
@@ -51,7 +51,7 @@ func NewInstaller(opts Options, logger *slog.Logger) *Installer {
 // Install performs the full host installation.
 // Steps:
 //  1. Determine remote arch via ssh <host> uname -m
-//  2. SCP the appropriate clipbridge-remote binary
+//  2. SCP the appropriate pastelocal-remote binary
 //  3. SCP the token file
 //  4. SCP the skill file (paste.md) to ~/.claude/commands/paste.md
 //  5. Set permissions (0600 on token, 0755 on binary, 0700 on dir)
@@ -74,8 +74,8 @@ func (i *Installer) Install() error {
 	}
 	i.logger.Info("detected remote architecture", "arch", arch, "host", host)
 
-	// Step 2: SCP the appropriate clipbridge-remote binary.
-	binaryName := fmt.Sprintf("clipbridge-remote-%s", arch)
+	// Step 2: SCP the appropriate pastelocal-remote binary.
+	binaryName := fmt.Sprintf("pastelocal-remote-%s", arch)
 	localBinary := filepath.Join(i.opts.LocalBinaryDir, binaryName)
 	if _, err := os.Stat(localBinary); err != nil {
 		return fmt.Errorf("local binary not found: %s: %w", localBinary, err)
@@ -98,8 +98,8 @@ func (i *Installer) Install() error {
 	}
 
 	// Step 3: SCP the token file.
-	const remoteTokenDir = "~/.config/clipbridge"
-	const remoteTokenPath = "~/.config/clipbridge/token"
+	const remoteTokenDir = "~/.config/pastelocal"
+	const remoteTokenPath = "~/.config/pastelocal/token"
 	if err := i.ensureRemoteDir(host, remoteTokenDir); err != nil {
 		return fmt.Errorf("create remote token directory: %w", err)
 	}
@@ -169,7 +169,7 @@ func (i *Installer) Uninstall() error {
 	}
 
 	// Step 2: Remove the remote token.
-	const remoteTokenPath = "~/.config/clipbridge/token"
+	const remoteTokenPath = "~/.config/pastelocal/token"
 	i.logger.Info("removing remote token", "host", host, "path", remoteTokenPath)
 	if _, _, err := RunSSH(host, "rm", "-f", remoteTokenPath); err != nil {
 		i.logger.Warn("failed to remove remote token", "error", err)
@@ -195,8 +195,8 @@ func (i *Installer) Uninstall() error {
 
 // installTokenOnly handles the --update-token-only path.
 func (i *Installer) installTokenOnly(host string) error {
-	const remoteTokenDir = "~/.config/clipbridge"
-	const remoteTokenPath = "~/.config/clipbridge/token"
+	const remoteTokenDir = "~/.config/pastelocal"
+	const remoteTokenPath = "~/.config/pastelocal/token"
 
 	if err := i.ensureRemoteDir(host, remoteTokenDir); err != nil {
 		return fmt.Errorf("create remote token directory: %w", err)

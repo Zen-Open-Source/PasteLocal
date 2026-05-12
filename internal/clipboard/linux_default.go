@@ -5,7 +5,7 @@ package clipboard
 import (
 	"context"
 
-	cliperr "github.com/clipbridge/clipbridge/internal/errors"
+	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 )
 
 // linuxDefaultReader is returned on Linux when neither wayland nor x11

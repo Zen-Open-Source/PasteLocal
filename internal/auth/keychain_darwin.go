@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	keychainService = "com.clipbridge.daemon"
+	keychainService = "com.pastelocal.daemon"
 	keychainAccount = "auth-token"
 	securityBin     = "/usr/bin/security"
 )

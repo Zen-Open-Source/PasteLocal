@@ -1,4 +1,4 @@
-module github.com/clipbridge/clipbridge
+module github.com/pastelocal/pastelocal
 
 go 1.26.3
 

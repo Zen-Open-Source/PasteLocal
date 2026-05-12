@@ -8,13 +8,13 @@ import (
 )
 
 // DefaultTokenPath returns the default file path for token storage:
-// ~/.config/clipbridge/token
+// ~/.config/pastelocal/token
 func DefaultTokenPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "clipbridge", "token")
+	return filepath.Join(home, ".config", "pastelocal", "token")
 }
 
 // StoreTokenFile writes the token to the file at the given path with

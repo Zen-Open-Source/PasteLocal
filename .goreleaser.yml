@@ -1,15 +1,15 @@
 version: 2
 
-project_name: clipbridge
+project_name: pastelocal
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: clipbridge
-    main: ./cmd/clipbridge
-    binary: clipbridge
+  - id: pastelocal
+    main: ./cmd/pastelocal
+    binary: pastelocal
     ldflags:
       - -s -w -X main.version={{.Version}}
     goos:
@@ -21,9 +21,9 @@ builds:
     flags:
       - -trimpath
 
-  - id: clipbridged
-    main: ./cmd/clipbridged
-    binary: clipbridged
+  - id: pastelocald
+    main: ./cmd/pastelocald
+    binary: pastelocald
     ldflags:
       - -s -w -X main.version={{.Version}}
     goos:
@@ -35,9 +35,9 @@ builds:
     flags:
       - -trimpath
 
-  - id: clipbridge-remote
-    main: ./cmd/clipbridge-remote
-    binary: clipbridge-remote
+  - id: pastelocal-remote
+    main: ./cmd/pastelocal-remote
+    binary: pastelocal-remote
     ldflags:
       - -s -w -X main.version={{.Version}}
     goos:
@@ -51,8 +51,8 @@ builds:
 archives:
   - id: default
     builds:
-      - clipbridge
-      - clipbridged
+      - pastelocal
+      - pastelocald
     name_template: >-
       {{ .ProjectName }}_
       {{- if eq .Os "darwin" }}macOS
@@ -66,7 +66,7 @@ archives:
 
   - id: remote
     builds:
-      - clipbridge-remote
+      - pastelocal-remote
     name_template: >-
       {{ .ProjectName }}-remote_
       {{- .Os }}_
@@ -86,21 +86,21 @@ sboms:
 
 release:
   github:
-    owner: clipbridge
-    name: clipbridge
+    owner: pastelocal
+    name: pastelocal
 
 brews:
-  - name: clipbridge
+  - name: pastelocal
     repository:
-      owner: clipbridge
+      owner: pastelocal
       name: tap
       branch: main
     directory: Formula
-    homepage: https://github.com/clipbridge/clipbridge
+    homepage: https://github.com/pastelocal/pastelocal
     description: Clipboard bridge for Claude Code over SSH
     license: MIT
     install: |
-      bin.install "clipbridge"
-      bin.install "clipbridged"
+      bin.install "pastelocal"
+      bin.install "pastelocald"
     test: |
-      assert_match version, shell_output("#{bin}/clipbridge --version")
+      assert_match version, shell_output("#{bin}/pastelocal --version")

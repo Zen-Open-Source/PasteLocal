@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/config"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/config"
 )
 
 // -------------------------------------------------------------------
@@ -438,12 +438,12 @@ func TestThreat_TokenNeverInArgvOrEnv(t *testing.T) {
 		t.Skip("skipping: only supported on Linux and macOS")
 	}
 
-	// Locate the clipbridge-remote binary relative to this test file.
+	// Locate the pastelocal-remote binary relative to this test file.
 	_, thisFile, _, _ := runtime.Caller(0)
 	projectRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
-	binPath := filepath.Join(projectRoot, "clipbridge-remote")
+	binPath := filepath.Join(projectRoot, "pastelocal-remote")
 	if _, err := os.Stat(binPath); err != nil {
-		t.Skipf("skipping: clipbridge-remote binary not found at %s", binPath)
+		t.Skipf("skipping: pastelocal-remote binary not found at %s", binPath)
 	}
 
 	// Create a token file with a distinctive secret value.
@@ -454,7 +454,7 @@ func TestThreat_TokenNeverInArgvOrEnv(t *testing.T) {
 		t.Fatalf("write token file: %v", err)
 	}
 
-	// Start a test server so clipbridge-remote has something to connect to.
+	// Start a test server so pastelocal-remote has something to connect to.
 	cfg := config.Default()
 	cfg.Port = 0
 	cfg.RateLimitPerMinute = 100
@@ -468,7 +468,7 @@ func TestThreat_TokenNeverInArgvOrEnv(t *testing.T) {
 	var port int
 	fmt.Sscanf(portStr, "%d", &port)
 
-	// Start clipbridge-remote with a long timeout so it stays alive for inspection.
+	// Start pastelocal-remote with a long timeout so it stays alive for inspection.
 	cmd := exec.Command(binPath,
 		"-port", fmt.Sprintf("%d", port),
 		"-token-file", tokenPath,
@@ -479,7 +479,7 @@ func TestThreat_TokenNeverInArgvOrEnv(t *testing.T) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start clipbridge-remote: %v", err)
+		t.Fatalf("start pastelocal-remote: %v", err)
 	}
 	pid := cmd.Process.Pid
 
@@ -507,7 +507,7 @@ func TestThreat_TokenNeverInArgvOrEnv(t *testing.T) {
 			t.Logf("could not read %s: %v", environPath, readErr)
 		} else {
 			for _, ev := range strings.Split(string(data), "\x00") {
-				if strings.Contains(ev, secretToken) && !strings.HasPrefix(ev, "CLIPBRIDGE_TOKEN=") {
+				if strings.Contains(ev, secretToken) && !strings.HasPrefix(ev, "PASTELOCAL_TOKEN=") {
 					t.Errorf("secret token found in process environment: %s", ev)
 				}
 			}
@@ -520,7 +520,7 @@ func TestThreat_TokenNeverInArgvOrEnv(t *testing.T) {
 			t.Logf("ps eww failed: %v", psErr)
 		} else {
 			for _, line := range strings.Split(string(psEnvOut), "\n") {
-				if strings.Contains(line, secretToken) && !strings.Contains(line, "CLIPBRIDGE_TOKEN=") {
+				if strings.Contains(line, secretToken) && !strings.Contains(line, "PASTELOCAL_TOKEN=") {
 					t.Errorf("secret token found in process environment: %s", line)
 				}
 			}

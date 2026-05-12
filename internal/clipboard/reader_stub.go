@@ -3,7 +3,7 @@
 package clipboard
 
 import (
-	cliperr "github.com/clipbridge/clipbridge/internal/errors"
+	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 	"context"
 )
 

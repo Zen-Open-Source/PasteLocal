@@ -12,18 +12,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clipbridge/clipbridge/internal/errors"
-	"github.com/clipbridge/clipbridge/internal/proto"
+	"github.com/pastelocal/pastelocal/internal/errors"
+	"github.com/pastelocal/pastelocal/internal/proto"
 )
 
 var randChars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 func main() {
 	port := flag.Int("port", 7331, "daemon port")
-	outDir := flag.String("out", "~/.cache/clipbridge", "output directory")
+	outDir := flag.String("out", "~/.cache/pastelocal", "output directory")
 	flag.Bool("keep", false, "keep file after read (don't auto-delete; only affects skill behavior)")
 	timeout := flag.Duration("timeout", 5*time.Second, "request timeout")
-	tokenFile := flag.String("token-file", "~/.config/clipbridge/token", "path to token file")
+	tokenFile := flag.String("token-file", "~/.config/pastelocal/token", "path to token file")
 	flag.Parse()
 
 	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile)))
@@ -210,7 +210,7 @@ func handleErrorResponse(resp *http.Response) int {
 }
 
 // writeImage creates the output directory (mode 0700) and writes the decoded
-// image bytes to a file named clipbridge-<unix_ts>-<rand6>.<ext> (mode 0600).
+// image bytes to a file named pastelocal-<unix_ts>-<rand6>.<ext> (mode 0600).
 func writeImage(data []byte, format, outDir string) (string, error) {
 	if err := os.MkdirAll(outDir, 0700); err != nil {
 		return "", fmt.Errorf("creating output directory: %w", err)
@@ -223,7 +223,7 @@ func writeImage(data []byte, format, outDir string) (string, error) {
 
 	ts := time.Now().Unix()
 	rand6 := randomString(6)
-	filename := fmt.Sprintf("clipbridge-%d-%s.%s", ts, rand6, ext)
+	filename := fmt.Sprintf("pastelocal-%d-%s.%s", ts, rand6, ext)
 	path := filepath.Join(outDir, filename)
 
 	if err := os.WriteFile(path, data, 0600); err != nil {

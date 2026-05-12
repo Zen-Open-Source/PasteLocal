@@ -292,7 +292,7 @@ func TestFindInsertIndexBlockNotFound(t *testing.T) {
 
 func TestRemoveBlockNoPrecedingBlankLine(t *testing.T) {
 	// Block at the very start of the file (no preceding blank line).
-	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myhost:remoteforward"
+	input := "Host myhost\n  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myhost:remoteforward"
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -425,7 +425,7 @@ Host myserver
   Port 2222
   User admin
   IdentityFile ~/.ssh/server_key
-  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myserver:remoteforward
+  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myserver:remoteforward
   # Optional: enable agent forwarding
   ForwardAgent yes
 
@@ -593,7 +593,7 @@ func TestAddRemoteForwardToNonExistentHostWithExistingConfig(t *testing.T) {
 // --- Test adding a second RemoteForward to same host (different port) ---
 
 func TestAddRemoteForwardMultiplePorts(t *testing.T) {
-	input := "Host myhost\n  HostName example.com\n  RemoteForward 8080 127.0.0.1:8080  # clipbridge:myhost:remoteforward"
+	input := "Host myhost\n  HostName example.com\n  RemoteForward 8080 127.0.0.1:8080  # pastelocal:myhost:remoteforward"
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

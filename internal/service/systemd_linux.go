@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	systemdUnitName = "clipbridge.service"
+	systemdUnitName = "pastelocal.service"
 )
 
 // systemdUnitPath returns the full path to the systemd user unit file.
@@ -35,11 +35,11 @@ func (s *Service) generateUnit() string {
 	execStart := fmt.Sprintf("%s --config %s", s.BinaryPath, s.ConfigPath)
 	// If we have the home dir, substitute absolute paths
 	if home != "%h" {
-		execStart = fmt.Sprintf("%s/.local/bin/clipbridged --config %s/.config/clipbridge/config.toml", home, home)
+		execStart = fmt.Sprintf("%s/.local/bin/pastelocald --config %s/.config/pastelocal/config.toml", home, home)
 	}
 
 	return fmt.Sprintf(`[Unit]
-Description=clipbridge clipboard daemon
+Description=pastelocal clipboard daemon
 After=network.target
 
 [Service]

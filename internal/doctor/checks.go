@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/config"
-	"github.com/clipbridge/clipbridge/internal/hostinstall"
-	"github.com/clipbridge/clipbridge/internal/service"
-	"github.com/clipbridge/clipbridge/internal/sshconfig"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/hostinstall"
+	"github.com/pastelocal/pastelocal/internal/service"
+	"github.com/pastelocal/pastelocal/internal/sshconfig"
 )
 
 // checkDaemonRunning verifies the daemon process is running via service.Status.
@@ -27,7 +27,7 @@ func checkDaemonRunning(cfg *config.Config) CheckResult {
 			Name:    "Daemon running",
 			Passed:  false,
 			Detail:  fmt.Sprintf("status check failed: %v", err),
-			FixHint: "Run `clipbridge start`",
+			FixHint: "Run `pastelocal start`",
 			AutoFix: false,
 		}
 	}
@@ -36,7 +36,7 @@ func checkDaemonRunning(cfg *config.Config) CheckResult {
 			Name:    "Daemon running",
 			Passed:  false,
 			Detail:  "not running",
-			FixHint: "Run `clipbridge start`",
+			FixHint: "Run `pastelocal start`",
 			AutoFix: false,
 		}
 	}
@@ -57,7 +57,7 @@ func checkDaemonHTTP(cfg *config.Config) CheckResult {
 			Name:    "Daemon HTTP responding",
 			Passed:  false,
 			Detail:  fmt.Sprintf("GET /health failed: %v", err),
-			FixHint: "Run `clipbridge start`",
+			FixHint: "Run `pastelocal start`",
 			AutoFix: false,
 		}
 	}
@@ -67,7 +67,7 @@ func checkDaemonHTTP(cfg *config.Config) CheckResult {
 			Name:    "Daemon HTTP responding",
 			Passed:  false,
 			Detail:  fmt.Sprintf("GET /health returned %d", resp.StatusCode),
-			FixHint: "Check `clipbridge logs`",
+			FixHint: "Check `pastelocal logs`",
 			AutoFix: false,
 		}
 	}
@@ -141,7 +141,7 @@ func checkTokenFile(cfg *config.Config) CheckResult {
 			Name:    "Local token file exists",
 			Passed:  false,
 			Detail:  "cannot determine token path",
-			FixHint: "Run `clipbridge start` to generate a token",
+			FixHint: "Run `pastelocal start` to generate a token",
 			AutoFix: false,
 		}
 	}
@@ -153,7 +153,7 @@ func checkTokenFile(cfg *config.Config) CheckResult {
 				Name:    "Local token file exists",
 				Passed:  false,
 				Detail:  fmt.Sprintf("%s does not exist", tokenPath),
-				FixHint: "Run `clipbridge start` to generate a token",
+				FixHint: "Run `pastelocal start` to generate a token",
 				AutoFix: false,
 			}
 		}
@@ -173,7 +173,7 @@ func checkTokenFile(cfg *config.Config) CheckResult {
 			Name:    "Local token file permissions",
 			Passed:  false,
 			Detail:  fmt.Sprintf("mode %04o (expected 0600)", perm),
-			FixHint: "Run `clipbridge doctor --fix`",
+			FixHint: "Run `pastelocal doctor --fix`",
 			AutoFix: true,
 		}
 	}
@@ -208,7 +208,7 @@ func checkKeychainEntry(cfg *config.Config) CheckResult {
 			Name:    "Keychain entry exists",
 			Passed:  false,
 			Detail:  keychainLabel() + " entry not found",
-			FixHint: "Run `clipbridge doctor --fix` to re-store token in keychain",
+			FixHint: "Run `pastelocal doctor --fix` to re-store token in keychain",
 			AutoFix: true,
 		}
 	}
@@ -217,7 +217,7 @@ func checkKeychainEntry(cfg *config.Config) CheckResult {
 			Name:    "Keychain entry exists",
 			Passed:  false,
 			Detail:  keychainLabel() + " entry is empty",
-			FixHint: "Run `clipbridge doctor --fix` to re-store token in keychain",
+			FixHint: "Run `pastelocal doctor --fix` to re-store token in keychain",
 			AutoFix: true,
 		}
 	}
@@ -314,7 +314,7 @@ func checkHostSSHConfig(cfg *config.Config, alias string) CheckResult {
 			Name:    "SSH RemoteForward configured",
 			Passed:  false,
 			Detail:  fmt.Sprintf("host %q not in config", alias),
-			FixHint: "Run `clipbridge add-host " + alias + "`",
+			FixHint: "Run `pastelocal add-host " + alias + "`",
 			AutoFix: false,
 		}
 	}
@@ -337,7 +337,7 @@ func checkHostSSHConfig(cfg *config.Config, alias string) CheckResult {
 				Name:    "SSH RemoteForward configured",
 				Passed:  false,
 				Detail:  "~/.ssh/config does not exist",
-				FixHint: "Run `clipbridge doctor --fix` or `clipbridge add-host " + alias + "`",
+				FixHint: "Run `pastelocal doctor --fix` or `pastelocal add-host " + alias + "`",
 				AutoFix: true,
 			}
 		}
@@ -378,7 +378,7 @@ func checkHostSSHConfig(cfg *config.Config, alias string) CheckResult {
 		Name:    "SSH RemoteForward configured",
 		Passed:  false,
 		Detail:  fmt.Sprintf("no RemoteForward for %s (port %d)", alias, port),
-		FixHint: "Run `clipbridge doctor --fix` to add RemoteForward",
+		FixHint: "Run `pastelocal doctor --fix` to add RemoteForward",
 		AutoFix: true,
 	}
 }
@@ -392,7 +392,7 @@ func checkHostSSHConnection(cfg *config.Config, alias string) CheckResult {
 			Name:    "SSH connection works",
 			Passed:  false,
 			Detail:  fmt.Sprintf("host %q not in config", alias),
-			FixHint: "Run `clipbridge add-host " + alias + "`",
+			FixHint: "Run `pastelocal add-host " + alias + "`",
 			AutoFix: false,
 		}
 	}
@@ -415,7 +415,7 @@ func checkHostSSHConnection(cfg *config.Config, alias string) CheckResult {
 	}
 }
 
-// checkHostRemoteBinary verifies the remote clipbridge-remote binary is present and executable.
+// checkHostRemoteBinary verifies the remote pastelocal-remote binary is present and executable.
 func checkHostRemoteBinary(cfg *config.Config, alias string) CheckResult {
 	hostCfg, ok := cfg.Hosts[alias]
 	if !ok {
@@ -423,7 +423,7 @@ func checkHostRemoteBinary(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote binary present",
 			Passed:  false,
 			Detail:  fmt.Sprintf("host %q not in config", alias),
-			FixHint: "Run `clipbridge add-host " + alias + "`",
+			FixHint: "Run `pastelocal add-host " + alias + "`",
 			AutoFix: false,
 		}
 	}
@@ -437,7 +437,7 @@ func checkHostRemoteBinary(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote binary present",
 			Passed:  false,
 			Detail:  fmt.Sprintf("%s not found/executable on %s: %s", remotePath, alias, strings.TrimSpace(stderr)),
-			FixHint: "Run `clipbridge doctor --fix` to re-copy binary",
+			FixHint: "Run `pastelocal doctor --fix` to re-copy binary",
 			AutoFix: true,
 		}
 	}
@@ -446,7 +446,7 @@ func checkHostRemoteBinary(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote binary present",
 			Passed:  false,
 			Detail:  fmt.Sprintf("%s not executable on %s", remotePath, alias),
-			FixHint: "Run `clipbridge doctor --fix` to re-copy binary",
+			FixHint: "Run `pastelocal doctor --fix` to re-copy binary",
 			AutoFix: true,
 		}
 	}
@@ -465,13 +465,13 @@ func checkHostRemoteToken(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote token file present",
 			Passed:  false,
 			Detail:  fmt.Sprintf("host %q not in config", alias),
-			FixHint: "Run `clipbridge add-host " + alias + "`",
+			FixHint: "Run `pastelocal add-host " + alias + "`",
 			AutoFix: false,
 		}
 	}
 
 	sshHost := sshHostStr(hostCfg, alias)
-	const remoteTokenPath = "~/.config/clipbridge/token"
+	const remoteTokenPath = "~/.config/pastelocal/token"
 
 	// Check file exists.
 	exists, err := hostinstall.RemoteFileExists(sshHost, remoteTokenPath)
@@ -480,7 +480,7 @@ func checkHostRemoteToken(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote token file present",
 			Passed:  false,
 			Detail:  fmt.Sprintf("%s not found on %s", remoteTokenPath, alias),
-			FixHint: "Run `clipbridge add-host " + alias + "` to sync the token",
+			FixHint: "Run `pastelocal add-host " + alias + "` to sync the token",
 			AutoFix: false,
 		}
 	}
@@ -505,7 +505,7 @@ func checkHostRemoteToken(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote token file permissions",
 			Passed:  false,
 			Detail:  fmt.Sprintf("mode %s (expected 600) on %s", perm, alias),
-			FixHint: "Run `clipbridge doctor --fix` to correct permissions",
+			FixHint: "Run `pastelocal doctor --fix` to correct permissions",
 			AutoFix: true,
 		}
 	}
@@ -525,7 +525,7 @@ func checkHostRemoteSkill(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote skill installed",
 			Passed:  false,
 			Detail:  fmt.Sprintf("host %q not in config", alias),
-			FixHint: "Run `clipbridge add-host " + alias + "`",
+			FixHint: "Run `pastelocal add-host " + alias + "`",
 			AutoFix: false,
 		}
 	}
@@ -539,7 +539,7 @@ func checkHostRemoteSkill(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote skill installed",
 			Passed:  false,
 			Detail:  fmt.Sprintf("%s not found on %s", skillPath, alias),
-			FixHint: "Run `clipbridge doctor --fix` to re-copy skill file",
+			FixHint: "Run `pastelocal doctor --fix` to re-copy skill file",
 			AutoFix: true,
 		}
 	}
@@ -558,15 +558,15 @@ func checkHostDiskSpace(cfg *config.Config, alias string) CheckResult {
 			Name:    "Remote disk space",
 			Passed:  false,
 			Detail:  fmt.Sprintf("host %q not in config", alias),
-			FixHint: "Run `clipbridge add-host " + alias + "`",
+			FixHint: "Run `pastelocal add-host " + alias + "`",
 			AutoFix: false,
 		}
 	}
 
 	sshHost := sshHostStr(hostCfg, alias)
 
-	// Check available disk space on the partition containing ~/.config/clipbridge.
-	stdout, stderr, err := hostinstall.RunSSH(sshHost, "df", "-m", "~/.config/clipbridge")
+	// Check available disk space on the partition containing ~/.config/pastelocal.
+	stdout, stderr, err := hostinstall.RunSSH(sshHost, "df", "-m", "~/.config/pastelocal")
 	if err != nil {
 		return CheckResult{
 			Name:    "Remote disk space",
@@ -644,7 +644,7 @@ func remoteBinPath(h config.Host) string {
 	if h.RemotePath != "" {
 		return h.RemotePath
 	}
-	return "~/.local/bin/clipbridge-remote"
+	return "~/.local/bin/pastelocal-remote"
 }
 
 // userSSHConfigPath returns the path to the user's ~/.ssh/config file.

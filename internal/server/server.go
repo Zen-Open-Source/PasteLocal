@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	"github.com/clipbridge/clipbridge/internal/clipboard"
-	"github.com/clipbridge/clipbridge/internal/config"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/clipboard"
+	"github.com/pastelocal/pastelocal/internal/config"
 )
 
 // BinaryVersion is set at build time via -ldflags.

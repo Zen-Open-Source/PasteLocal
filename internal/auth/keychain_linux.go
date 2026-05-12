@@ -23,8 +23,8 @@ func StoreTokenSecretTool(token string) error {
 	}
 	cmd := exec.Command(secretToolBin,
 		"store",
-		"--label=clipbridge",
-		"service", "clipbridge",
+		"--label=pastelocal",
+		"service", "pastelocal",
 		"user", "token",
 	)
 	cmd.Stdin = strings.NewReader(token + "\n")
@@ -42,7 +42,7 @@ func RetrieveTokenSecretTool() (string, error) {
 	}
 	cmd := exec.Command(secretToolBin,
 		"lookup",
-		"service", "clipbridge",
+		"service", "pastelocal",
 		"user", "token",
 	)
 	out, err := cmd.Output()
@@ -64,7 +64,7 @@ func DeleteTokenSecretTool() error {
 	}
 	cmd := exec.Command(secretToolBin,
 		"clear",
-		"service", "clipbridge",
+		"service", "pastelocal",
 		"user", "token",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {

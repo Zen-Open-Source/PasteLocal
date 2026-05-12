@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/clipbridge/clipbridge/internal/config"
+	"github.com/pastelocal/pastelocal/internal/config"
 )
 
 // --- CheckResult tests ---
@@ -35,10 +35,10 @@ func TestCheckResultStringFailWithHint(t *testing.T) {
 		Name:    "Daemon running",
 		Passed:  false,
 		Detail:  "not running",
-		FixHint: "Run `clipbridge start`",
+		FixHint: "Run `pastelocal start`",
 	}
 	got := r.String()
-	want := "✗ Daemon running  not running\n  FIX: Run `clipbridge start`"
+	want := "✗ Daemon running  not running\n  FIX: Run `pastelocal start`"
 	if got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
@@ -323,12 +323,12 @@ func TestRemoteBinPath(t *testing.T) {
 		{
 			name: "default path",
 			host: config.Host{},
-			want: "~/.local/bin/clipbridge-remote",
+			want: "~/.local/bin/pastelocal-remote",
 		},
 		{
 			name: "custom path",
-			host: config.Host{RemotePath: "/opt/bin/clipbridge-remote"},
-			want: "/opt/bin/clipbridge-remote",
+			host: config.Host{RemotePath: "/opt/bin/pastelocal-remote"},
+			want: "/opt/bin/pastelocal-remote",
 		},
 	}
 
@@ -1045,7 +1045,7 @@ func TestFindLocalSkillPathInConfigDir(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 	defer os.Setenv("HOME", origHome)
 
-	skillDir := filepath.Join(tmpDir, ".config", "clipbridge", "skill")
+	skillDir := filepath.Join(tmpDir, ".config", "pastelocal", "skill")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -1068,8 +1068,8 @@ func TestFindLocalSkillPathInShareDir(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 	defer os.Setenv("HOME", origHome)
 
-	// Don't create config/clipbridge/skill, only share/clipbridge/skill
-	skillDir := filepath.Join(tmpDir, ".local", "share", "clipbridge", "skill")
+	// Don't create config/pastelocal/skill, only share/pastelocal/skill
+	skillDir := filepath.Join(tmpDir, ".local", "share", "pastelocal", "skill")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -1173,7 +1173,7 @@ func TestRemoteBinPathEdgeCases(t *testing.T) {
 		{
 			name: "empty RemotePath",
 			host: config.Host{RemotePath: ""},
-			want: "~/.local/bin/clipbridge-remote",
+			want: "~/.local/bin/pastelocal-remote",
 		},
 		{
 			name: "absolute path",
@@ -1633,7 +1633,7 @@ func TestCheckHostSSHConfigWithEntryInConfig(t *testing.T) {
 	}
 
 	sshCfgPath := filepath.Join(sshDir, "config")
-	content := "Host myhost\n  HostName my.example.com\n  RemoteForward 7331 127.0.0.1:7331  # clipbridge:myhost:remoteforward\n"
+	content := "Host myhost\n  HostName my.example.com\n  RemoteForward 7331 127.0.0.1:7331  # pastelocal:myhost:remoteforward\n"
 	if err := os.WriteFile(sshCfgPath, []byte(content), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -1736,7 +1736,7 @@ func TestFindLocalSkillPathConfigPreferredOverShare(t *testing.T) {
 	defer os.Setenv("HOME", origHome)
 
 	// Create both config and share dirs
-	configDir := filepath.Join(tmpDir, ".config", "clipbridge", "skill")
+	configDir := filepath.Join(tmpDir, ".config", "pastelocal", "skill")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -1745,7 +1745,7 @@ func TestFindLocalSkillPathConfigPreferredOverShare(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	shareDir := filepath.Join(tmpDir, ".local", "share", "clipbridge", "skill")
+	shareDir := filepath.Join(tmpDir, ".local", "share", "pastelocal", "skill")
 	if err := os.MkdirAll(shareDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -1830,7 +1830,7 @@ func TestFixMissingSkillWithLocalSkillFile(t *testing.T) {
 	defer os.Setenv("HOME", origHome)
 
 	// Create the skill file in the config directory
-	skillDir := filepath.Join(tmpDir, ".config", "clipbridge", "skill")
+	skillDir := filepath.Join(tmpDir, ".config", "pastelocal", "skill")
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

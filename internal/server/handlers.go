@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clipbridge/clipbridge/internal/auth"
-	cliperr "github.com/clipbridge/clipbridge/internal/errors"
-	"github.com/clipbridge/clipbridge/internal/proto"
+	"github.com/pastelocal/pastelocal/internal/auth"
+	cliperr "github.com/pastelocal/pastelocal/internal/errors"
+	"github.com/pastelocal/pastelocal/internal/proto"
 )
 
 // handleClipboard handles GET /clipboard. It reads the current clipboard image

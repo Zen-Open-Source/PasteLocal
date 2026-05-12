@@ -1,4 +1,4 @@
-// Package errors defines structured error codes for clipbridge.
+// Package errors defines structured error codes for pastelocal.
 //
 // Each error code carries an HTTP status, a human-readable message, and a
 // fix hint. The package provides a registry-based lookup and a helper for
@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-// Error represents a structured clipbridge error.
+// Error represents a structured pastelocal error.
 type Error struct {
 	Code       string `json:"code"`
 	HTTPStatus int    `json:"-"`
@@ -36,11 +36,11 @@ type jsonResp struct {
 // Registry maps error codes to their templates.
 var Registry = map[string]Error{
 	"CB1001": {Code: "CB1001", HTTPStatus: http.StatusBadRequest, Message: "No image on clipboard", FixHint: "Take a screenshot first"},
-	"CB1002": {Code: "CB1002", HTTPStatus: http.StatusInternalServerError, Message: "Clipboard tool not installed", FixHint: "Run `clipbridge doctor --fix`"},
-	"CB1003": {Code: "CB1003", HTTPStatus: http.StatusInternalServerError, Message: "Clipboard tool failed", FixHint: "Check `clipbridge logs`"},
+	"CB1002": {Code: "CB1002", HTTPStatus: http.StatusInternalServerError, Message: "Clipboard tool not installed", FixHint: "Run `pastelocal doctor --fix`"},
+	"CB1003": {Code: "CB1003", HTTPStatus: http.StatusInternalServerError, Message: "Clipboard tool failed", FixHint: "Check `pastelocal logs`"},
 	"CB1004": {Code: "CB1004", HTTPStatus: http.StatusUnsupportedMediaType, Message: "Image conversion failed", FixHint: "Save as PNG manually"},
 	"CB1005": {Code: "CB1005", HTTPStatus: http.StatusRequestEntityTooLarge, Message: "Image exceeds max_image_bytes", FixHint: "Raise limit in config"},
-	"CB2001": {Code: "CB2001", HTTPStatus: http.StatusUnauthorized, Message: "Invalid auth token", FixHint: "Re-run `clipbridge add-host <host>` to sync the token."},
+	"CB2001": {Code: "CB2001", HTTPStatus: http.StatusUnauthorized, Message: "Invalid auth token", FixHint: "Re-run `pastelocal add-host <host>` to sync the token."},
 	"CB2002": {Code: "CB2002", HTTPStatus: http.StatusUnauthorized, Message: "Missing auth token", FixHint: "Bug; report it"},
 	"CB3001": {Code: "CB3001", HTTPStatus: http.StatusUpgradeRequired, Message: "Protocol version mismatch", FixHint: "Update local or remote binary"},
 	"CB4001": {Code: "CB4001", HTTPStatus: http.StatusTooManyRequests, Message: "Rate limit exceeded", FixHint: "Wait and retry"},

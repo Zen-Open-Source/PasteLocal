@@ -73,8 +73,8 @@ func TestNewWithMessage(t *testing.T) {
 		t.Errorf("got Message %q, want %q", e.Message, customMsg)
 	}
 	// FixHint should still come from the template.
-	if e.FixHint != "Check `clipbridge logs`" {
-		t.Errorf("got FixHint %q, want %q", e.FixHint, "Check `clipbridge logs`")
+	if e.FixHint != "Check `pastelocal logs`" {
+		t.Errorf("got FixHint %q, want %q", e.FixHint, "Check `pastelocal logs`")
 	}
 }
 
@@ -130,7 +130,7 @@ func TestWriteJSON(t *testing.T) {
 	if got.Error != "Invalid auth token" {
 		t.Errorf("got Error %q, want %q", got.Error, "Invalid auth token")
 	}
-	wantHint := "Re-run `clipbridge add-host <host>` to sync the token."
+	wantHint := "Re-run `pastelocal add-host <host>` to sync the token."
 	if got.FixHint != wantHint {
 		t.Errorf("got FixHint %q, want %q", got.FixHint, wantHint)
 	}
