@@ -699,6 +699,130 @@ termius = false
 	}
 }
 
+func TestDefaultConfigHasNewFields(t *testing.T) {
+	cfg := Default()
+
+	if cfg.MaxTextBytes != DefaultMaxTextBytes {
+		t.Errorf("MaxTextBytes = %d, want %d", cfg.MaxTextBytes, DefaultMaxTextBytes)
+	}
+	if len(cfg.AllowedFormats) != 2 {
+		t.Errorf("AllowedFormats len = %d, want 2", len(cfg.AllowedFormats))
+	}
+	if cfg.History.Enabled != false {
+		t.Error("History.Enabled should be false by default")
+	}
+	if cfg.History.Size != DefaultHistorySize {
+		t.Errorf("History.Size = %d, want %d", cfg.History.Size, DefaultHistorySize)
+	}
+	if cfg.Redaction.Enabled != true {
+		t.Error("Redaction.Enabled should be true by default")
+	}
+	if len(cfg.Redaction.Rules) != 5 {
+		t.Errorf("Redaction.Rules len = %d, want 5", len(cfg.Redaction.Rules))
+	}
+	if cfg.Processors.Enabled != false {
+		t.Error("Processors.Enabled should be false by default")
+	}
+}
+
+func TestIsFormatAllowed(t *testing.T) {
+	cfg := Default()
+
+	if !cfg.IsFormatAllowed("png") {
+		t.Error("png should be allowed by default")
+	}
+	if !cfg.IsFormatAllowed("text") {
+		t.Error("text should be allowed by default")
+	}
+	if cfg.IsFormatAllowed("html") {
+		t.Error("html should not be allowed by default")
+	}
+}
+
+func TestIsFormatAllowedCustom(t *testing.T) {
+	cfg := Default()
+	cfg.AllowedFormats = []string{"png"}
+
+	if !cfg.IsFormatAllowed("png") {
+		t.Error("png should be allowed")
+	}
+	if cfg.IsFormatAllowed("text") {
+		t.Error("text should not be allowed when only png is in list")
+	}
+}
+
+func TestHostHasPermissionDefault(t *testing.T) {
+	cfg := Default()
+	cfg.AddHost("myserver", Host{})
+
+	// Default (no permissions set) means all permissions.
+	if !cfg.HostHasPermission("myserver", "read") {
+		t.Error("should have read permission by default")
+	}
+	if !cfg.HostHasPermission("myserver", "write") {
+		t.Error("should have write permission by default")
+	}
+}
+
+func TestHostHasPermissionRead(t *testing.T) {
+	cfg := Default()
+	cfg.AddHost("myserver", Host{Permissions: []string{"read"}})
+
+	if !cfg.HostHasPermission("myserver", "read") {
+		t.Error("should have read permission")
+	}
+	if cfg.HostHasPermission("myserver", "write") {
+		t.Error("should not have write permission")
+	}
+}
+
+func TestHostHasPermissionReadWrite(t *testing.T) {
+	cfg := Default()
+	cfg.AddHost("myserver", Host{Permissions: []string{"read+write"}})
+
+	if !cfg.HostHasPermission("myserver", "read") {
+		t.Error("should have read permission via read+write")
+	}
+	if !cfg.HostHasPermission("myserver", "write") {
+		t.Error("should have write permission via read+write")
+	}
+}
+
+func TestHostHasPermissionNonexistent(t *testing.T) {
+	cfg := Default()
+	if cfg.HostHasPermission("nonexistent", "read") {
+		t.Error("should not have permission for nonexistent host")
+	}
+}
+
+func TestDefaultRedactionRules(t *testing.T) {
+	rules := DefaultRedactionRules()
+	if len(rules) != 5 {
+		t.Fatalf("len(DefaultRedactionRules) = %d, want 5", len(rules))
+	}
+
+	names := make(map[string]bool)
+	for _, r := range rules {
+		if r.Name == "" {
+			t.Error("rule has empty name")
+		}
+		if r.Pattern == "" {
+			t.Errorf("rule %s has empty pattern", r.Name)
+		}
+		if r.Action != "block" && r.Action != "redact" {
+			t.Errorf("rule %s has invalid action %q", r.Name, r.Action)
+		}
+		names[r.Name] = true
+	}
+
+	expectedNames := []string{"aws-access-key", "aws-secret-key", "github-token", "private-key", "credit-card"}
+	for _, name := range expectedNames {
+		if !names[name] {
+			t.Errorf("missing default rule: %s", name)
+		}
+	}
+}
+
 func TestSaveAndReloadWithHosts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

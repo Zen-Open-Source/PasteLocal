@@ -63,6 +63,7 @@ archives:
     files:
       - LICENSE
       - skill/paste.md
+      - skill/paste-send.md
 
   - id: remote
     builds:
@@ -76,6 +77,7 @@ archives:
     files:
       - LICENSE
       - skill/paste.md
+      - skill/paste-send.md
 
 checksum:
   name_template: SHA256SUMS
@@ -84,10 +86,79 @@ sboms:
   - id: default
     artifacts: archive
 
+signs:
+  - cmd: cosign
+    args:
+      - "sign-blob"
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: archive
+    certificate: ""
+
+docker_files:
+  - id: remote
+    dockerfile: Dockerfile.remote
+    builds:
+      - pastelocal-remote
+
+dockers:
+  - id: remote-amd64
+    ids:
+      - pastelocal-remote
+    dockerfile: Dockerfile.remote
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    image_templates:
+      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-amd64"
+      - "ghcr.io/pastelocal/pastelocal-remote:latest-amd64"
+    goos: linux
+    goarch: amd64
+
+  - id: remote-arm64
+    ids:
+      - pastelocal-remote
+    dockerfile: Dockerfile.remote
+    build_flag_templates:
+      - "--platform=linux/arm64"
+    image_templates:
+      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-arm64"
+      - "ghcr.io/pastelocal/pastelocal-remote:latest-arm64"
+    goos: linux
+    goarch: arm64
+
+docker_manifests:
+  - id: remote-manifest
+    name_template: "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-amd64"
+      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-arm64"
+
+nfpms:
+  - id: remote
+    builds:
+      - pastelocal-remote
+    package_name: pastelocal-remote
+    vendor: pastelocal
+    homepage: https://github.com/pastelocal/pastelocal
+    maintainer: pastelocal contributors
+    description: Remote helper for pastelocal clipboard bridge
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    file_name_template: >-
+      {{ .PackageName }}_
+      {{- .Version }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+
 release:
   github:
     owner: pastelocal
     name: pastelocal
+  mode: replace
 
 brews:
   - name: pastelocal

@@ -22,17 +22,23 @@ var BinaryVersion = "0.1.0"
 
 // Server is the HTTP daemon that serves clipboard data to authorized remote hosts.
 type Server struct {
-	cfg          *config.Config
-	configPath   string
-	tokenStore   *auth.TokenStore
-	reader       clipboard.Reader
-	logger       *slog.Logger
-	sem          chan struct{} // semaphore for max_in_flight
-	mu           sync.Mutex   // serializes clipboard reads
-	lastRead     time.Time
-	lastReadSize int64
-	rateLimiter  *RateLimiter
-	httpServer   *http.Server
+	cfg            *config.Config
+	configPath     string
+	tokenStore     *auth.TokenStore
+	reader         clipboard.Reader
+	writer         clipboard.Writer
+	logger         *slog.Logger
+	sem            chan struct{} // semaphore for max_in_flight
+	mu             sync.Mutex   // serializes clipboard reads
+	lastRead       time.Time
+	lastReadSize   int64
+	lastReadFormat string
+	rateLimiter    *RateLimiter
+	history        *HistoryBuffer
+	redaction      *RedactionEngine
+	processors     *ProcessorPipeline
+	watchHub       *WatchHub
+	httpServer     *http.Server
 }
 
 // New creates a new Server. The Server will listen on the port specified in cfg,
@@ -43,9 +49,19 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 		configPath:  configPath,
 		tokenStore:  tokenStore,
 		reader:      reader,
+		writer:      clipboard.NewWriter(""),
 		logger:      logger,
 		sem:         make(chan struct{}, cfg.MaxInFlight),
 		rateLimiter: NewRateLimiter(cfg.RateLimitPerMinute),
+		redaction:   NewRedactionEngine(cfg),
+		processors:  NewProcessorPipeline(cfg, logger),
+		watchHub:    NewWatchHub(logger),
+	}
+
+	// Initialize history buffer if enabled.
+	if cfg.History.Enabled {
+		token, _ := tokenStore.Retrieve()
+		s.history = NewHistoryBuffer(cfg.History.Size, cfg.History.TTL, token)
 	}
 
 	// Pre-fill the semaphore so all slots are available.
@@ -55,6 +71,8 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/clipboard", s.handleClipboard)
+	mux.HandleFunc("/clipboard/history", s.handleClipboardHistory)
+	mux.HandleFunc("/clipboard/watch", s.handleWatch)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/version", s.handleVersion)
 
@@ -94,11 +112,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(shutdownCtx)
 }
 
-// LastRead returns the timestamp and size of the most recent clipboard read.
-func (s *Server) LastRead() (time.Time, int64) {
+// LastRead returns the timestamp, size, and format of the most recent clipboard read.
+func (s *Server) LastRead() (time.Time, int64, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.lastRead, s.lastReadSize
+	return s.lastRead, s.lastReadSize, s.lastReadFormat
 }
 
 // handleSignals responds to OS signals.
@@ -131,6 +149,12 @@ func (s *Server) reloadConfig() {
 	}
 	s.cfg = cfg
 	s.rateLimiter = NewRateLimiter(cfg.RateLimitPerMinute)
+	s.redaction = NewRedactionEngine(cfg)
+	s.processors = NewProcessorPipeline(cfg, s.logger)
+	if cfg.History.Enabled && s.history == nil {
+		token, _ := s.tokenStore.Retrieve()
+		s.history = NewHistoryBuffer(cfg.History.Size, cfg.History.TTL, token)
+	}
 	s.logger.Info("config reloaded")
 }
 
@@ -155,4 +179,29 @@ func (s *Server) rejectNonLoopbackConnCtx(ctx context.Context, c net.Conn) conte
 		return ctx
 	}
 	return ctx
+}
+
+// Handler returns the HTTP handler for the server. Useful for testing.
+func (s *Server) Handler() http.Handler {
+	return s.httpServer.Handler
+}
+
+// HandleClipboard returns the handler function for /clipboard.
+func (s *Server) HandleClipboard() http.HandlerFunc {
+	return s.handleClipboard
+}
+
+// HandleClipboardHistory returns the handler function for /clipboard/history.
+func (s *Server) HandleClipboardHistory() http.HandlerFunc {
+	return s.handleClipboardHistory
+}
+
+// HandleHealth returns the handler function for /health.
+func (s *Server) HandleHealth() http.HandlerFunc {
+	return s.handleHealth
+}
+
+// HandleVersion returns the handler function for /version.
+func (s *Server) HandleVersion() http.HandlerFunc {
+	return s.handleVersion
 }

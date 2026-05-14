@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"github.com/pastelocal/pastelocal/internal/auth"
@@ -19,6 +20,7 @@ import (
 	"github.com/pastelocal/pastelocal/internal/doctor"
 	"github.com/pastelocal/pastelocal/internal/hostinstall"
 	"github.com/pastelocal/pastelocal/internal/service"
+	"github.com/pastelocal/pastelocal/internal/tui"
 )
 
 // version is set via ldflags at build time.
@@ -893,5 +895,91 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	// 5. Print success.
 	fmt.Println("pastelocal uninstalled successfully.")
+	return nil
+}
+
+// ── dashboard ─────────────────────────────────────────────────────────────────
+
+var dashboardCmd = &cobra.Command{
+	Use:   "dashboard",
+	Short: "Interactive TUI dashboard for monitoring pastelocal",
+	GroupID: "diagnostic",
+	RunE:  runDashboard,
+}
+
+func init() {
+	rootCmd.AddCommand(dashboardCmd)
+}
+
+func runDashboard(cmd *cobra.Command, args []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	model := tui.NewModel(cfg, cfgPath)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+
+	if _, err := p.Run(); err != nil {
+		return fail("dashboard error: %v", err)
+	}
+	return nil
+}
+
+// ── tokens ─────────────────────────────────────────────────────────────────────
+
+var tokensCmd = &cobra.Command{
+	Use:   "tokens",
+	Short: "List and manage auth tokens",
+	GroupID: "host",
+	RunE:  runTokens,
+}
+
+var tokensRevoke string
+
+func init() {
+	tokensCmd.Flags().StringVar(&tokensRevoke, "revoke", "", "revoke token for host alias")
+	rootCmd.AddCommand(tokensCmd)
+}
+
+func runTokens(cmd *cobra.Command, args []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	if tokensRevoke != "" {
+		hostCfg, ok := cfg.Hosts[tokensRevoke]
+		if !ok {
+			return fail("host %q not found in config", tokensRevoke)
+		}
+		// Remove all permissions from the host.
+		hostCfg.Permissions = []string{}
+		cfg.Hosts[tokensRevoke] = hostCfg
+		if err := saveConfig(cfg); err != nil {
+			return fail("failed to save config: %v", err)
+		}
+		fmt.Printf("Revoked all permissions for host %s.\n", tokensRevoke)
+		return nil
+	}
+
+	// List all hosts and their permissions.
+	if len(cfg.Hosts) == 0 {
+		fmt.Println("No hosts configured.")
+		return nil
+	}
+
+	fmt.Printf("%-20s %-20s %s\n", "ALIAS", "PERMISSIONS", "TOKEN_HASH")
+	for alias, h := range cfg.Hosts {
+		perms := strings.Join(h.Permissions, ", ")
+		if perms == "" {
+			perms = "read+write (default)"
+		}
+		tokenHash := h.TokenHash
+		if tokenHash == "" {
+			tokenHash = "(shared token)"
+		}
+		fmt.Printf("%-20s %-20s %s\n", alias, perms, tokenHash)
+	}
 	return nil
 }

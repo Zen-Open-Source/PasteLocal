@@ -40,10 +40,19 @@ var Registry = map[string]Error{
 	"CB1003": {Code: "CB1003", HTTPStatus: http.StatusInternalServerError, Message: "Clipboard tool failed", FixHint: "Check `pastelocal logs`"},
 	"CB1004": {Code: "CB1004", HTTPStatus: http.StatusUnsupportedMediaType, Message: "Image conversion failed", FixHint: "Save as PNG manually"},
 	"CB1005": {Code: "CB1005", HTTPStatus: http.StatusRequestEntityTooLarge, Message: "Image exceeds max_image_bytes", FixHint: "Raise limit in config"},
+	"CB1006": {Code: "CB1006", HTTPStatus: http.StatusInternalServerError, Message: "Clipboard write failed", FixHint: "Check `pastelocal logs`"},
+	"CB1007": {Code: "CB1007", HTTPStatus: http.StatusUnsupportedMediaType, Message: "Unsupported clipboard format", FixHint: "Use PNG or plain text"},
+	"CB1008": {Code: "CB1008", HTTPStatus: http.StatusBadRequest, Message: "Unsupported MIME type", FixHint: "Check `allowed_formats` in config"},
+	"CB1009": {Code: "CB1009", HTTPStatus: http.StatusNotFound, Message: "Clipboard entry not found", FixHint: "The history entry may have expired"},
+	"CB1010": {Code: "CB1010", HTTPStatus: http.StatusForbidden, Message: "Content blocked by redaction rule", FixHint: "Clipboard content matches a redaction rule"},
+	"CB1011": {Code: "CB1011", HTTPStatus: http.StatusServiceUnavailable, Message: "Processor pipeline failed", FixHint: "Check processor configuration in config"},
+	"CB1012": {Code: "CB1012", HTTPStatus: http.StatusBadRequest, Message: "No text on clipboard", FixHint: "Copy some text first"},
 	"CB2001": {Code: "CB2001", HTTPStatus: http.StatusUnauthorized, Message: "Invalid auth token", FixHint: "Re-run `pastelocal add-host <host>` to sync the token."},
 	"CB2002": {Code: "CB2002", HTTPStatus: http.StatusUnauthorized, Message: "Missing auth token", FixHint: "Bug; report it"},
+	"CB2003": {Code: "CB2003", HTTPStatus: http.StatusForbidden, Message: "Insufficient permissions", FixHint: "Token does not have the required permission"},
 	"CB3001": {Code: "CB3001", HTTPStatus: http.StatusUpgradeRequired, Message: "Protocol version mismatch", FixHint: "Update local or remote binary"},
 	"CB4001": {Code: "CB4001", HTTPStatus: http.StatusTooManyRequests, Message: "Rate limit exceeded", FixHint: "Wait and retry"},
+	"CB4002": {Code: "CB4002", HTTPStatus: http.StatusServiceUnavailable, Message: "Too many concurrent requests", FixHint: "Wait and retry"},
 }
 
 // mu protects the Registry for concurrent reads; the registry is

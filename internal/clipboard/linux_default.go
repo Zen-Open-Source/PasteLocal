@@ -21,3 +21,21 @@ func (r *linuxDefaultReader) ReadImage(ctx context.Context) ([]byte, error) {
 	return nil, cliperr.NewWithMessage("CB1002",
 		"no display server selected; rebuild with -tags wayland or -tags x11")
 }
+
+// ReadContent always returns an error when no display server tag is set.
+func (r *linuxDefaultReader) ReadContent(ctx context.Context) (*Content, error) {
+	return nil, cliperr.NewWithMessage("CB1002",
+		"no display server selected; rebuild with -tags wayland or -tags x11")
+}
+
+// ReadText always returns an error when no display server tag is set.
+func (r *linuxDefaultReader) ReadText(ctx context.Context) (string, error) {
+	return "", cliperr.NewWithMessage("CB1002",
+		"no display server selected; rebuild with -tags wayland or -tags x11")
+}
+
+// AvailableFormats always returns an error when no display server tag is set.
+func (r *linuxDefaultReader) AvailableFormats(ctx context.Context) ([]string, error) {
+	return nil, cliperr.NewWithMessage("CB1002",
+		"no display server selected; rebuild with -tags wayland or -tags x11")
+}

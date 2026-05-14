@@ -225,7 +225,7 @@ func TestHealthResponseSerialization(t *testing.T) {
 }
 
 func TestProtocolVersionConstant(t *testing.T) {
-	if ProtocolVersion != 1 {
-		t.Errorf("ProtocolVersion = %d, want 1", ProtocolVersion)
+	if ProtocolVersion != 2 {
+		t.Errorf("ProtocolVersion = %d, want 2", ProtocolVersion)
 	}
 }

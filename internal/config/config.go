@@ -15,10 +15,13 @@ const (
 	DefaultTransport       = "tcp"
 	DefaultLogLevel        = "info"
 	DefaultMaxImageBytes   = 52428800 // 50 MiB
+	DefaultMaxTextBytes    = 1048576  // 1 MiB
 	DefaultMaxInFlight     = 4
 	DefaultRateLimitPerMin = 60
 	DefaultConfigDir       = "~/.config/pastelocal"
 	DefaultConfigFile      = "config.toml"
+	DefaultHistorySize     = 10
+	DefaultHistoryTTL      = 3600 // seconds (1 hour)
 )
 
 type Config struct {
@@ -26,12 +29,17 @@ type Config struct {
 	Transport          string          `toml:"transport"`
 	LogLevel           string          `toml:"log_level"`
 	MaxImageBytes      int64           `toml:"max_image_bytes"`
+	MaxTextBytes       int64           `toml:"max_text_bytes"`
 	MaxInFlight        int             `toml:"max_in_flight"`
 	RateLimitPerMinute int             `toml:"rate_limit_per_minute"`
 	AuditLog           string          `toml:"audit_log"`
+	AllowedFormats     []string        `toml:"allowed_formats"`
 	MacOS              MacOSConfig     `toml:"macos"`
 	Linux              LinuxConfig     `toml:"linux"`
 	Hosts              map[string]Host `toml:"hosts"`
+	History            HistoryConfig   `toml:"history"`
+	Redaction          RedactionConfig `toml:"redaction"`
+	Processors         ProcessorConfig `toml:"processors"`
 }
 
 type MacOSConfig struct {
@@ -43,11 +51,48 @@ type LinuxConfig struct {
 }
 
 type Host struct {
-	AddedAt    time.Time `toml:"added_at"`
-	RemotePort int       `toml:"remote_port"`
-	RemoteUser string    `toml:"remote_user"`
-	RemotePath string    `toml:"remote_path"`
-	Termius    bool      `toml:"termius"`
+	AddedAt     time.Time   `toml:"added_at"`
+	RemotePort  int         `toml:"remote_port"`
+	RemoteUser  string      `toml:"remote_user"`
+	RemotePath  string      `toml:"remote_path"`
+	Termius     bool        `toml:"termius"`
+	Permissions []string    `toml:"permissions"` // "read", "write"
+	TokenHash   string      `toml:"token_hash"`  // SHA-256 of per-host token
+}
+
+// HistoryConfig controls the clipboard history ring buffer.
+type HistoryConfig struct {
+	Enabled bool `toml:"enabled"`
+	Size    int  `toml:"size"`
+	TTL     int  `toml:"ttl_seconds"`
+}
+
+// RedactionConfig controls content filtering and redaction rules.
+type RedactionConfig struct {
+	Enabled bool            `toml:"enabled"`
+	Rules   []RedactionRule `toml:"rules"`
+}
+
+// RedactionRule defines a single content redaction rule.
+type RedactionRule struct {
+	Name        string `toml:"name"`
+	Pattern     string `toml:"pattern"`      // regex pattern
+	Action      string `toml:"action"`        // "redact" or "block"
+	Description string `toml:"description"`
+}
+
+// ProcessorConfig controls the clipboard processor pipeline.
+type ProcessorConfig struct {
+	Enabled    bool              `toml:"enabled"`
+	Timeout    int               `toml:"timeout_seconds"`
+	Chain      []ProcessorEntry  `toml:"chain"`
+}
+
+// ProcessorEntry defines a single processor in the pipeline.
+type ProcessorEntry struct {
+	Name    string `toml:"name"`
+	Command string `toml:"command"`
+	On      string `toml:"on"` // "read", "write", "both"
 }
 
 // mu protects file operations during Save to prevent concurrent writes.
@@ -60,9 +105,60 @@ func Default() *Config {
 		Transport:          DefaultTransport,
 		LogLevel:           DefaultLogLevel,
 		MaxImageBytes:      DefaultMaxImageBytes,
+		MaxTextBytes:       DefaultMaxTextBytes,
 		MaxInFlight:        DefaultMaxInFlight,
 		RateLimitPerMinute: DefaultRateLimitPerMin,
+		AllowedFormats:     []string{"png", "text"},
 		Hosts:              make(map[string]Host),
+		History: HistoryConfig{
+			Enabled: false,
+			Size:    DefaultHistorySize,
+			TTL:     DefaultHistoryTTL,
+		},
+		Redaction: RedactionConfig{
+			Enabled: true,
+			Rules:   DefaultRedactionRules(),
+		},
+		Processors: ProcessorConfig{
+			Enabled: false,
+			Timeout: 5,
+		},
+	}
+}
+
+// DefaultRedactionRules returns built-in redaction rules for common secrets.
+func DefaultRedactionRules() []RedactionRule {
+	return []RedactionRule{
+		{
+			Name:        "aws-access-key",
+			Pattern:     `AKIA[0-9A-Z]{16}`,
+			Action:      "block",
+			Description: "AWS access key ID",
+		},
+		{
+			Name:        "aws-secret-key",
+			Pattern:     `(?i)aws(.{0,20})?(?-i)['\"][0-9a-zA-Z/+]{40}['\"]`,
+			Action:      "block",
+			Description: "AWS secret access key",
+		},
+		{
+			Name:        "github-token",
+			Pattern:     `gh[porsu]_[0-9a-zA-Z]{36}`,
+			Action:      "block",
+			Description: "GitHub personal access token",
+		},
+		{
+			Name:        "private-key",
+			Pattern:     `-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----`,
+			Action:      "block",
+			Description: "PEM private key header",
+		},
+		{
+			Name:        "credit-card",
+			Pattern:     `\b4[0-9]{12}(?:[0-9]{3})?\b|\b5[1-5][0-9]{14}\b|\b3[47][0-9]{13}\b`,
+			Action:      "block",
+			Description: "Credit card number (Visa/MC/Amex)",
+		},
 	}
 }
 
@@ -165,6 +261,34 @@ func (c *Config) RemoveHost(name string) {
 	delete(c.Hosts, name)
 }
 
+// IsFormatAllowed returns true if the given format is in the allowed list.
+func (c *Config) IsFormatAllowed(format string) bool {
+	for _, f := range c.AllowedFormats {
+		if f == format {
+			return true
+		}
+	}
+	return false
+}
+
+// HostHasPermission returns true if the given host has the specified permission.
+// If the host has no permissions set, it defaults to having all permissions.
+func (c *Config) HostHasPermission(alias, permission string) bool {
+	h, ok := c.Hosts[alias]
+	if !ok {
+		return false
+	}
+	if len(h.Permissions) == 0 {
+		return true // default: all permissions
+	}
+	for _, p := range h.Permissions {
+		if p == permission || p == "read+write" {
+			return true
+		}
+	}
+	return false
+}
+
 // mergeDefaults fills in zero-valued fields with defaults.
 func mergeDefaults(cfg *Config) {
 	if cfg.Port == 0 {
@@ -179,6 +303,9 @@ func mergeDefaults(cfg *Config) {
 	if cfg.MaxImageBytes == 0 {
 		cfg.MaxImageBytes = DefaultMaxImageBytes
 	}
+	if cfg.MaxTextBytes == 0 {
+		cfg.MaxTextBytes = DefaultMaxTextBytes
+	}
 	if cfg.MaxInFlight == 0 {
 		cfg.MaxInFlight = DefaultMaxInFlight
 	}
@@ -187,6 +314,18 @@ func mergeDefaults(cfg *Config) {
 	}
 	if cfg.Hosts == nil {
 		cfg.Hosts = make(map[string]Host)
+	}
+	if len(cfg.AllowedFormats) == 0 {
+		cfg.AllowedFormats = []string{"png", "text"}
+	}
+	if cfg.History.Size == 0 {
+		cfg.History.Size = DefaultHistorySize
+	}
+	if cfg.History.TTL == 0 {
+		cfg.History.TTL = DefaultHistoryTTL
+	}
+	if cfg.Processors.Timeout == 0 {
+		cfg.Processors.Timeout = 5
 	}
 }
 

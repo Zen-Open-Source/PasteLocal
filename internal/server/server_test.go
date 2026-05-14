@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/clipboard"
 	"github.com/pastelocal/pastelocal/internal/config"
 	"github.com/pastelocal/pastelocal/internal/proto"
 )
@@ -28,6 +29,24 @@ type mockReader struct {
 
 func (m *mockReader) ReadImage(ctx context.Context) ([]byte, error) {
 	return m.image, m.err
+}
+
+func (m *mockReader) ReadContent(ctx context.Context) (*clipboard.Content, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if len(m.image) > 0 {
+		return &clipboard.Content{Data: m.image, Format: "png"}, nil
+	}
+	return nil, fmt.Errorf("no content")
+}
+
+func (m *mockReader) ReadText(ctx context.Context) (string, error) {
+	return "", fmt.Errorf("no text")
+}
+
+func (m *mockReader) AvailableFormats(ctx context.Context) ([]string, error) {
+	return []string{"image/png"}, nil
 }
 
 // newTestServer creates a Server wired up for testing with sensible defaults.
@@ -208,22 +227,22 @@ func TestSemaphoreBlocksAtMaxInFlight(t *testing.T) {
 	// Drain the single semaphore slot.
 	<-s.sem
 
-	// Now /clipboard should be rejected with CB4001.
+	// Now /clipboard should be rejected with CB4002 (concurrency limit).
 	req := httptest.NewRequest(http.MethodGet, "/clipboard", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	s.handleClipboard(w, req)
 
-	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusTooManyRequests)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 	}
 
 	var resp map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if code, _ := resp["code"].(string); code != "CB4001" {
-		t.Errorf("code = %q, want %q", code, "CB4001")
+	if code, _ := resp["code"].(string); code != "CB4002" {
+		t.Errorf("code = %q, want %q", code, "CB4002")
 	}
 
 	// Put the slot back.
@@ -425,7 +444,8 @@ func (m *mockConn) SetWriteDeadline(t time.Time) error  { return nil }
 func TestClipboardMethodNotAllowed(t *testing.T) {
 	s, _ := newTestServer(t, nil, nil)
 
-	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+	// POST is now allowed (write clipboard), so only test truly disallowed methods.
+	for _, method := range []string{http.MethodPut, http.MethodDelete, http.MethodPatch} {
 		req := httptest.NewRequest(method, "/clipboard", nil)
 		w := httptest.NewRecorder()
 		s.handleClipboard(w, req)
@@ -558,12 +578,15 @@ func TestLastReadAccessor(t *testing.T) {
 	s, _ := newTestServer(t, nil, nil)
 
 	// Initially should be zero
-	t1, size1 := s.LastRead()
+	t1, size1, fmt1 := s.LastRead()
 	if !t1.IsZero() {
 		t.Error("initial LastRead time should be zero")
 	}
 	if size1 != 0 {
 		t.Error("initial LastReadSize should be 0")
+	}
+	if fmt1 != "" {
+		t.Error("initial LastReadFormat should be empty")
 	}
 
 	// After a clipboard read, it should be updated.
@@ -579,12 +602,15 @@ func TestLastReadAccessor(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	t2, size2 := s.LastRead()
+	t2, size2, fmt2 := s.LastRead()
 	if t2.IsZero() {
 		t.Error("LastRead time should not be zero after read")
 	}
 	if size2 != int64(len(reader.image)) {
 		t.Errorf("LastReadSize = %d, want %d", size2, len(reader.image))
+	}
+	if fmt2 != "png" {
+		t.Errorf("LastReadFormat = %q, want %q", fmt2, "png")
 	}
 }
 
