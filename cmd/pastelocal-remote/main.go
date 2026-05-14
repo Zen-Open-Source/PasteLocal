@@ -32,9 +32,13 @@ func main() {
 	// Watch mode: connect to WebSocket and print notifications.
 	watch := flag.Bool("watch", false, "watch for clipboard changes via WebSocket")
 
+	// History mode: list or fetch from clipboard history.
+	list := flag.Bool("list", false, "list clipboard history entries")
+	index := flag.Int("index", 0, "fetch history entry by index (1=most recent, requires --list)")
+
 	flag.Parse()
 
-	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch))
+	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index))
 }
 
 // expandHome replaces a leading ~ with the user's home directory.
@@ -58,7 +62,7 @@ func readToken(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool) int {
+func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int) int {
 	token, err := readToken(tokenFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading token: %v\n", err)
@@ -76,6 +80,14 @@ func run(port int, outDir string, timeout time.Duration, tokenFile string, sendP
 	// Send mode: push a file to the local clipboard.
 	if sendPath != "" {
 		return runSend(client, baseURL, token, sendPath, sendFormat)
+	}
+
+	// History list mode.
+	if doList {
+		if index > 0 {
+			return runHistoryFetch(client, baseURL, token, outDir, index)
+		}
+		return runHistoryList(client, baseURL, token)
 	}
 
 	// Default: fetch clipboard (read mode).
@@ -419,6 +431,179 @@ func writeFile(data []byte, ext, outDir string) (string, error) {
 	}
 
 	return path, nil
+}
+
+// runHistoryList fetches and displays the clipboard history.
+func runHistoryList(client *http.Client, baseURL, token string) int {
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/clipboard/history", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating request: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		if isConnectionRefused(err) {
+			fmt.Fprintf(os.Stderr, "tunnel not connected: connection refused\n")
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "error fetching history: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return handleErrorResponse(resp)
+	}
+
+	var histResp proto.HistoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&histResp); err != nil {
+		fmt.Fprintf(os.Stderr, "error decoding response: %v\n", err)
+		return 10
+	}
+
+	if !histResp.OK {
+		fmt.Fprintf(os.Stderr, "history request failed\n")
+		return 10
+	}
+
+	if len(histResp.Items) == 0 {
+		fmt.Println("No history entries found. Take a screenshot or copy some text first.")
+		return 0
+	}
+
+	fmt.Printf("%-5s %-20s %-10s %s\n", "INDEX", "CAPTURED_AT", "FORMAT", "SIZE")
+	for i, item := range histResp.Items {
+		// Display in reverse order (1 = most recent)
+		displayIdx := len(histResp.Items) - i
+		fmt.Printf("%-5d %-20s %-10s %d bytes\n", displayIdx, item.CapturedAt, item.Format, item.ByteCount)
+	}
+	fmt.Println("\nUse --index <number> to fetch a specific entry (e.g., --index 1 for most recent)")
+	return 0
+}
+
+// runHistoryFetch fetches a specific history entry by index.
+func runHistoryFetch(client *http.Client, baseURL, token, outDir string, index int) int {
+	// First, get the history list to find the entry ID.
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/clipboard/history", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating request: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		if isConnectionRefused(err) {
+			fmt.Fprintf(os.Stderr, "tunnel not connected: connection refused\n")
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "error fetching history: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return handleErrorResponse(resp)
+	}
+
+	var histResp proto.HistoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&histResp); err != nil {
+		fmt.Fprintf(os.Stderr, "error decoding response: %v\n", err)
+		return 10
+	}
+
+	if !histResp.OK {
+		fmt.Fprintf(os.Stderr, "history request failed\n")
+		return 10
+	}
+
+	if len(histResp.Items) == 0 {
+		fmt.Fprintf(os.Stderr, "no history entries found\n")
+		return 3
+	}
+
+	// Index is 1-based, where 1 = most recent (last in the list)
+	if index < 1 || index > len(histResp.Items) {
+		fmt.Fprintf(os.Stderr, "invalid index %d (valid range: 1-%d)\n", index, len(histResp.Items))
+		return 4
+	}
+
+	// Convert display index (1=most recent) to array index
+	entryIdx := len(histResp.Items) - index
+	entry := histResp.Items[entryIdx]
+
+	// Fetch the specific entry by ID
+	entryURL := baseURL + "/clipboard/history/" + entry.ID
+	req2, err := http.NewRequest(http.MethodGet, entryURL, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating request: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	req2.Header.Set("Authorization", "Bearer "+token)
+
+	resp2, err := client.Do(req2)
+	if err != nil {
+		if isConnectionRefused(err) {
+			fmt.Fprintf(os.Stderr, "tunnel not connected: connection refused\n")
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "error fetching history entry: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	defer resp2.Body.Close()
+
+	if resp2.StatusCode != http.StatusOK {
+		return handleErrorResponse(resp2)
+	}
+
+	var clipResp proto.ClipboardResponse
+	if err := json.NewDecoder(resp2.Body).Decode(&clipResp); err != nil {
+		fmt.Fprintf(os.Stderr, "error decoding response: %v\n", err)
+		return 10
+	}
+
+	// Handle different formats (same as regular clipboard fetch)
+	switch clipResp.Format {
+	case "png", "jpeg", "gif":
+		imgData, err := base64.StdEncoding.DecodeString(clipResp.Image)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error decoding base64 image: %v\n", err)
+			return 4
+		}
+		path, err := writeFile(imgData, clipResp.Format, outDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error writing image: %v\n", err)
+			return 10
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error resolving absolute path: %v\n", err)
+			return 10
+		}
+		fmt.Println(absPath)
+
+	case "text":
+		ext := "txt"
+		path, err := writeFile([]byte(clipResp.Text), ext, outDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error writing text: %v\n", err)
+			return 10
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error resolving absolute path: %v\n", err)
+			return 10
+		}
+		fmt.Println(absPath)
+
+	default:
+		fmt.Fprintf(os.Stderr, "unknown clipboard format: %s\n", clipResp.Format)
+		return 4
+	}
+
+	return 0
 }
 
 // randomString returns n random alphanumeric characters.

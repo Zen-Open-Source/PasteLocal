@@ -111,7 +111,7 @@ func Default() *Config {
 		AllowedFormats:     []string{"png", "text"},
 		Hosts:              make(map[string]Host),
 		History: HistoryConfig{
-			Enabled: false,
+			Enabled: true,
 			Size:    DefaultHistorySize,
 			TTL:     DefaultHistoryTTL,
 		},

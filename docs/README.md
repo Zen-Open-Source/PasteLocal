@@ -116,6 +116,46 @@ prints file path → skill reads and attaches the image.
 
 ---
 
+## Clipboard History
+
+PasteLocal now maintains a clipboard history buffer, allowing you to paste from previous clipboard entries.
+
+### Configuration
+
+History is enabled by default (10 entries, 1-hour TTL). Configure in `~/.config/pastelocal/config.toml`:
+
+```toml
+[history]
+enabled = true
+size = 20           # max entries to keep
+ttl_seconds = 3600  # seconds before entries expire
+```
+
+### Usage
+
+On the remote host:
+
+```bash
+# List recent clipboard entries
+pastelocal-remote --list
+
+# Fetch a specific entry by index (1 = most recent)
+pastelocal-remote --list --index 2
+
+# Claude skill
+/paste-history
+```
+
+### History Skills
+
+| Skill | Description |
+|-------|-------------|
+| `/paste` | Current clipboard content |
+| `/paste-history` | Select and paste from history |
+| `/paste-send` | Send file from remote to local clipboard |
+
+---
+
 ## Troubleshooting (Top 10)
 
 | # | Symptom | Error Code | Fix |

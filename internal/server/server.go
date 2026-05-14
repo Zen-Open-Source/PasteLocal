@@ -72,6 +72,7 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 	mux := http.NewServeMux()
 	mux.HandleFunc("/clipboard", s.handleClipboard)
 	mux.HandleFunc("/clipboard/history", s.handleClipboardHistory)
+	mux.HandleFunc("/clipboard/history/", s.handleClipboardHistory)
 	mux.HandleFunc("/clipboard/watch", s.handleWatch)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/version", s.handleVersion)

@@ -17,10 +17,19 @@ All pastelocal errors follow the format `{"ok": false, "code": "CBxxxx",
 | CB1003 | 500 Internal Server Error | Clipboard tool failed | Check `pastelocal logs` |
 | CB1004 | 415 Unsupported Media Type | Image conversion failed | Save as PNG manually |
 | CB1005 | 413 Payload Too Large | Image exceeds max_image_bytes | Raise limit in config |
+| CB1006 | 500 Internal Server Error | Clipboard write failed | Check `pastelocal logs` |
+| CB1007 | 415 Unsupported Media Type | Unsupported clipboard format | Use PNG or plain text |
+| CB1008 | 400 Bad Request | Unsupported MIME type | Check `allowed_formats` in config |
+| CB1009 | 404 Not Found | Clipboard entry not found | The history entry may have expired |
+| CB1010 | 403 Forbidden | Content blocked by redaction rule | Clipboard content matches a redaction rule |
+| CB1011 | 503 Service Unavailable | Processor pipeline failed | Check processor configuration in config |
+| CB1012 | 400 Bad Request | No text on clipboard | Copy some text first |
 | CB2001 | 401 Unauthorized | Invalid auth token | Re-run `pastelocal add-host <host>` to sync the token. |
 | CB2002 | 401 Unauthorized | Missing auth token | Bug; report it |
+| CB2003 | 403 Forbidden | Insufficient permissions | Token does not have the required permission |
 | CB3001 | 426 Upgrade Required | Protocol version mismatch | Update local or remote binary |
 | CB4001 | 429 Too Many Requests | Rate limit exceeded | Wait and retry |
+| CB4002 | 503 Service Unavailable | Too many concurrent requests | Wait and retry |
 
 ## Remote Helper Exit Codes
 

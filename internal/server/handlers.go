@@ -321,7 +321,7 @@ func (s *Server) handleClipboardPost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// handleClipboardHistory handles GET /clipboard/history.
+// handleClipboardHistory handles GET /clipboard/history and /clipboard/history/{id}.
 func (s *Server) handleClipboardHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -334,14 +334,53 @@ func (s *Server) handleClipboardHistory(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Check if requesting a specific entry by ID (path: /clipboard/history/{id})
+	path := strings.TrimPrefix(r.URL.Path, "/clipboard/history")
+	path = strings.TrimPrefix(path, "/")
+
 	if s.history == nil {
-		// History not enabled.
+		if path != "" {
+			// Specific entry requested but history disabled.
+			cliperr.WriteJSON(w, cliperr.NewWithMessage("CB1009", "history is disabled"))
+			return
+		}
+		// List requested but history disabled.
 		resp := proto.HistoryResponse{OK: true, Items: []proto.HistoryEntry{}}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
+	// Fetch specific entry by ID.
+	if path != "" {
+		entryID := path
+		data, entry, err := s.history.Get(entryID)
+		if err != nil {
+			cliperr.WriteJSON(w, cliperr.NewWithMessage("CB1009", "history entry not found or expired"))
+			return
+		}
+
+		// Build response similar to clipboard read.
+		resp := proto.ClipboardResponse{
+			OK:         true,
+			Format:     entry.Format,
+			ByteCount:  entry.ByteCount,
+			CapturedAt: entry.CapturedAt.Format(time.RFC3339),
+			ID:         entry.ID,
+		}
+
+		if entry.Format == "png" {
+			resp.Image = base64.StdEncoding.EncodeToString(data)
+		} else {
+			resp.Text = string(data)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	// List all history entries.
 	items := s.history.List()
 	if items == nil {
 		items = []proto.HistoryEntry{}
