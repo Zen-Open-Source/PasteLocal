@@ -708,8 +708,8 @@ func TestDefaultConfigHasNewFields(t *testing.T) {
 	if len(cfg.AllowedFormats) != 2 {
 		t.Errorf("AllowedFormats len = %d, want 2", len(cfg.AllowedFormats))
 	}
-	if cfg.History.Enabled != false {
-		t.Error("History.Enabled should be false by default")
+	if cfg.History.Enabled != true {
+		t.Error("History.Enabled should be true by default")
 	}
 	if cfg.History.Size != DefaultHistorySize {
 		t.Errorf("History.Size = %d, want %d", cfg.History.Size, DefaultHistorySize)

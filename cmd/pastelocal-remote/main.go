@@ -36,9 +36,12 @@ func main() {
 	list := flag.Bool("list", false, "list clipboard history entries")
 	index := flag.Int("index", 0, "fetch history entry by index (1=most recent, requires --list)")
 
+	// Snippet mode: fetch a named snippet.
+	snippet := flag.String("snippet", "", "fetch a named snippet by name")
+
 	flag.Parse()
 
-	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index))
+	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index, *snippet))
 }
 
 // expandHome replaces a leading ~ with the user's home directory.
@@ -62,7 +65,7 @@ func readToken(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int) int {
+func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int, snippetName string) int {
 	token, err := readToken(tokenFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading token: %v\n", err)
@@ -80,6 +83,11 @@ func run(port int, outDir string, timeout time.Duration, tokenFile string, sendP
 	// Send mode: push a file to the local clipboard.
 	if sendPath != "" {
 		return runSend(client, baseURL, token, sendPath, sendFormat)
+	}
+
+	// Snippet mode: fetch a named snippet.
+	if snippetName != "" {
+		return runSnippetFetch(client, baseURL, token, outDir, snippetName)
 	}
 
 	// History list mode.
@@ -560,6 +568,79 @@ func runHistoryFetch(client *http.Client, baseURL, token, outDir string, index i
 
 	var clipResp proto.ClipboardResponse
 	if err := json.NewDecoder(resp2.Body).Decode(&clipResp); err != nil {
+		fmt.Fprintf(os.Stderr, "error decoding response: %v\n", err)
+		return 10
+	}
+
+	// Handle different formats (same as regular clipboard fetch)
+	switch clipResp.Format {
+	case "png", "jpeg", "gif":
+		imgData, err := base64.StdEncoding.DecodeString(clipResp.Image)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error decoding base64 image: %v\n", err)
+			return 4
+		}
+		path, err := writeFile(imgData, clipResp.Format, outDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error writing image: %v\n", err)
+			return 10
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error resolving absolute path: %v\n", err)
+			return 10
+		}
+		fmt.Println(absPath)
+
+	case "text":
+		ext := "txt"
+		path, err := writeFile([]byte(clipResp.Text), ext, outDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error writing text: %v\n", err)
+			return 10
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error resolving absolute path: %v\n", err)
+			return 10
+		}
+		fmt.Println(absPath)
+
+	default:
+		fmt.Fprintf(os.Stderr, "unknown clipboard format: %s\n", clipResp.Format)
+		return 4
+	}
+
+	return 0
+}
+
+// runSnippetFetch fetches a named snippet.
+func runSnippetFetch(client *http.Client, baseURL, token, outDir, name string) int {
+	url := baseURL + "/snippets/" + name
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating request: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		if isConnectionRefused(err) {
+			fmt.Fprintf(os.Stderr, "tunnel not connected: connection refused\n")
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "error fetching snippet: %v\n", redact(err.Error(), token))
+		return 10
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return handleErrorResponse(resp)
+	}
+
+	var clipResp proto.ClipboardResponse
+	if err := json.NewDecoder(resp.Body).Decode(&clipResp); err != nil {
 		fmt.Fprintf(os.Stderr, "error decoding response: %v\n", err)
 		return 10
 	}

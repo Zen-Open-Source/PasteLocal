@@ -70,3 +70,42 @@ type WatchNotification struct {
 	Format     string `json:"format"`
 	ID         string `json:"id,omitempty"`
 }
+
+// SnippetEntry represents a snippet in the list (metadata only).
+type SnippetEntry struct {
+	Name        string `json:"name"`
+	Format      string `json:"format"`
+	Size        int64  `json:"size"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+	Description string `json:"description,omitempty"`
+	Hash        string `json:"hash"`
+}
+
+// SnippetListResponse is the JSON response for GET /snippets.
+type SnippetListResponse struct {
+	OK    bool           `json:"ok"`
+	Items []SnippetEntry `json:"items"`
+}
+
+// SnippetSaveRequest is the JSON request for POST /snippets.
+type SnippetSaveRequest struct {
+	Name        string `json:"name"`
+	Format      string `json:"format"`      // "text" or "png"
+	Text        string `json:"text,omitempty"`
+	Image       string `json:"image,omitempty"` // base64
+	Description string `json:"description,omitempty"`
+}
+
+// SnippetSaveResponse is the JSON response for POST /snippets.
+type SnippetSaveResponse struct {
+	OK      bool   `json:"ok"`
+	Name    string `json:"name"`
+	Created bool   `json:"created"` // true if new, false if updated
+}
+
+// SnippetDeleteResponse is the JSON response for DELETE /snippets/{name}.
+type SnippetDeleteResponse struct {
+	OK   bool   `json:"ok"`
+	Name string `json:"name"`
+}

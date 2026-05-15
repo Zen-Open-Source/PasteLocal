@@ -74,6 +74,8 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 	mux.HandleFunc("/clipboard/history", s.handleClipboardHistory)
 	mux.HandleFunc("/clipboard/history/", s.handleClipboardHistory)
 	mux.HandleFunc("/clipboard/watch", s.handleWatch)
+	mux.HandleFunc("/snippets", s.handleSnippets)
+	mux.HandleFunc("/snippets/", s.handleSnippet)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/version", s.handleVersion)
 

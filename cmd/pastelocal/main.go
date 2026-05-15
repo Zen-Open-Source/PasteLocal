@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/pastelocal/pastelocal/internal/config"
 	"github.com/pastelocal/pastelocal/internal/doctor"
 	"github.com/pastelocal/pastelocal/internal/hostinstall"
+	"github.com/pastelocal/pastelocal/internal/proto"
 	"github.com/pastelocal/pastelocal/internal/service"
 	"github.com/pastelocal/pastelocal/internal/tui"
 )
@@ -980,6 +982,285 @@ func runTokens(cmd *cobra.Command, args []string) error {
 			tokenHash = "(shared token)"
 		}
 		fmt.Printf("%-20s %-20s %s\n", alias, perms, tokenHash)
+	}
+	return nil
+}
+
+// ── snippets ──────────────────────────────────────────────────────────────────
+
+var snippetsCmd = &cobra.Command{
+	Use:   "snippets",
+	Short: "Manage clipboard snippets",
+	GroupID: "daemon",
+}
+
+var (
+	snippetSaveName        string
+	snippetSaveFormat      string
+	snippetSaveDescription string
+	snippetSaveData        string
+	snippetRemoveName      string
+)
+
+var snippetsSaveCmd = &cobra.Command{
+	Use:   "save <name>",
+	Short: "Save current clipboard as a named snippet",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSnippetSave,
+}
+
+var snippetsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all saved snippets",
+	RunE:  runSnippetList,
+}
+
+var snippetsRemoveCmd = &cobra.Command{
+	Use:   "remove <name>",
+	Short: "Remove a saved snippet",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSnippetRemove,
+}
+
+func init() {
+	snippetsSaveCmd.Flags().StringVar(&snippetSaveFormat, "format", "", "force format: text or png (auto-detected if empty)")
+	snippetsSaveCmd.Flags().StringVar(&snippetSaveDescription, "description", "", "optional description of the snippet")
+	snippetsCmd.AddCommand(snippetsSaveCmd)
+	snippetsCmd.AddCommand(snippetsListCmd)
+	snippetsCmd.AddCommand(snippetsRemoveCmd)
+	rootCmd.AddCommand(snippetsCmd)
+}
+
+func runSnippetSave(cmd *cobra.Command, args []string) error {
+	name := args[0]
+
+	// Validate snippet name.
+	if !isValidSnippetName(name) {
+		return fail("invalid snippet name: %s (must be alphanumeric with - and _)", name)
+	}
+
+	// Check daemon is running.
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	if !isDaemonRunning(cfg.Port) {
+		return fail("daemon is not running. Start it with: pastelocal start")
+	}
+
+	// Fetch current clipboard.
+	token, err := getToken()
+	if err != nil {
+		return fail("failed to get token: %v", err)
+	}
+
+	clipResp, err := fetchClipboard(cfg.Port, token)
+	if err != nil {
+		return fail("failed to fetch clipboard: %v", err)
+	}
+
+	// Determine format.
+	format := snippetSaveFormat
+	if format == "" {
+		format = clipResp.Format
+	}
+	if format != "text" && format != "png" {
+		return fail("unsupported format: %s (must be text or png)", format)
+	}
+
+	// Get data.
+	var data []byte
+	if format == "png" {
+		data, err = base64.StdEncoding.DecodeString(clipResp.Image)
+		if err != nil {
+			return fail("failed to decode image: %v", err)
+		}
+	} else {
+		data = []byte(clipResp.Text)
+	}
+
+	// Save snippet via API.
+	if err := saveSnippet(cfg.Port, token, name, format, data, snippetSaveDescription); err != nil {
+		return fail("failed to save snippet: %v", err)
+	}
+
+	fmt.Printf("Snippet '%s' saved (%s, %d bytes)\n", name, format, len(data))
+	return nil
+}
+
+func runSnippetList(cmd *cobra.Command, args []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	token, err := getToken()
+	if err != nil {
+		return fail("failed to get token: %v", err)
+	}
+
+	snippets, err := listSnippets(cfg.Port, token)
+	if err != nil {
+		return fail("failed to list snippets: %v", err)
+	}
+
+	if len(snippets) == 0 {
+		fmt.Println("No snippets saved. Use `pastelocal snippets save <name>` to create one.")
+		return nil
+	}
+
+	fmt.Printf("%-20s %-10s %-10s %-20s %s\n", "NAME", "FORMAT", "SIZE", "UPDATED", "DESCRIPTION")
+	for _, s := range snippets {
+		desc := s.Description
+		if len(desc) > 30 {
+			desc = desc[:27] + "..."
+		}
+		fmt.Printf("%-20s %-10s %-10d %-20s %s\n", s.Name, s.Format, s.Size, s.UpdatedAt[:19], desc)
+	}
+	return nil
+}
+
+func runSnippetRemove(cmd *cobra.Command, args []string) error {
+	name := args[0]
+
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	token, err := getToken()
+	if err != nil {
+		return fail("failed to get token: %v", err)
+	}
+
+	if err := removeSnippet(cfg.Port, token, name); err != nil {
+		return fail("failed to remove snippet: %v", err)
+	}
+
+	fmt.Printf("Snippet '%s' removed\n", name)
+	return nil
+}
+
+// Helper functions.
+
+func isValidSnippetName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func isDaemonRunning(port int) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func getToken() (string, error) {
+	tokenPath := auth.DefaultTokenPath()
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func fetchClipboard(port int, token string) (*proto.ClipboardResponse, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/clipboard", port), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var clipResp proto.ClipboardResponse
+	if err := json.NewDecoder(resp.Body).Decode(&clipResp); err != nil {
+		return nil, err
+	}
+	return &clipResp, nil
+}
+
+func saveSnippet(port int, token, name, format string, data []byte, description string) error {
+	var reqBody proto.SnippetSaveRequest
+	reqBody.Name = name
+	reqBody.Format = format
+	reqBody.Description = description
+	if format == "png" {
+		reqBody.Image = base64.StdEncoding.EncodeToString(data)
+	} else {
+		reqBody.Text = string(data)
+	}
+
+	body, _ := json.Marshal(reqBody)
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%d/snippets", port), strings.NewReader(string(body)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func listSnippets(port int, token string) ([]proto.SnippetEntry, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/snippets", port), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var listResp proto.SnippetListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, err
+	}
+	return listResp.Items, nil
+}
+
+func removeSnippet(port int, token, name string) error {
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("http://127.0.0.1:%d/snippets/%s", port, name), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 	return nil
 }

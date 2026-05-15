@@ -146,13 +146,57 @@ pastelocal-remote --list --index 2
 /paste-history
 ```
 
-### History Skills
+### All Skills
 
 | Skill | Description |
 |-------|-------------|
 | `/paste` | Current clipboard content |
 | `/paste-history` | Select and paste from history |
+| `/paste-snippet` | Paste a named saved snippet |
 | `/paste-send` | Send file from remote to local clipboard |
+
+---
+
+## Clipboard Snippets
+
+Save frequently-used clipboard content as named snippets for quick retrieval.
+
+### Local Commands
+
+```bash
+# Save current clipboard as a named snippet
+pastelocal snippets save api-key
+pastelocal snippets save deploy-cmd --description "Deploy to production"
+
+# List all snippets
+pastelocal snippets list
+
+# Remove a snippet
+pastelocal snippets remove api-key
+```
+
+### Remote Commands
+
+On the remote host:
+
+```bash
+# Fetch a named snippet
+pastelocal-remote --snippet api-key
+```
+
+### Claude Skill
+
+```
+/paste-snippet api-key
+```
+
+### Snippet Storage
+
+Snippets are stored in `~/.local/share/pastelocal/snippets/` as JSON files with:
+- SHA-256 integrity hashes
+- Timestamps (created/updated)
+- Optional descriptions
+- 50MB total storage limit (configurable)
 
 ---
 
