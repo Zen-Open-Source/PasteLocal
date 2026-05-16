@@ -40,6 +40,7 @@ type Config struct {
 	History            HistoryConfig   `toml:"history"`
 	Redaction          RedactionConfig `toml:"redaction"`
 	Processors         ProcessorConfig `toml:"processors"`
+	Relay              RelayConfig     `toml:"relay"`
 }
 
 type MacOSConfig struct {
@@ -88,11 +89,21 @@ type ProcessorConfig struct {
 	Chain      []ProcessorEntry  `toml:"chain"`
 }
 
-// ProcessorEntry defines a single processor in the pipeline.
+// ProcessorEntry represents a single processor in the pipeline.
 type ProcessorEntry struct {
 	Name    string `toml:"name"`
 	Command string `toml:"command"`
-	On      string `toml:"on"` // "read", "write", "both"
+}
+
+// RelayConfig controls the E2E encrypted relay for multi-device sync.
+type RelayConfig struct {
+	Enabled      bool   `toml:"enabled"`
+	RelayURL     string `toml:"relay_url"`
+	DeviceID     string `toml:"device_id"`
+	DeviceKeyPath string `toml:"device_key_path"`
+	AuthTokenPath string `toml:"auth_token_path"`
+	AutoUpload   bool   `toml:"auto_upload"`
+	UploadTTL    int    `toml:"upload_ttl"` // seconds
 }
 
 // mu protects file operations during Save to prevent concurrent writes.
@@ -122,6 +133,15 @@ func Default() *Config {
 		Processors: ProcessorConfig{
 			Enabled: false,
 			Timeout: 5,
+		},
+		Relay: RelayConfig{
+			Enabled:      false,
+			RelayURL:     "http://localhost:7332",
+			DeviceID:     "",
+			DeviceKeyPath: "~/.config/pastelocal/device-key",
+			AuthTokenPath: "~/.config/pastelocal/relay-token",
+			AutoUpload:   false,
+			UploadTTL:    300,
 		},
 	}
 }

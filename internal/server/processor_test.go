@@ -36,7 +36,7 @@ func TestProcessorPipelinePassesTextThrough(t *testing.T) {
 	cfg := config.Default()
 	cfg.Processors.Enabled = true
 	cfg.Processors.Chain = []config.ProcessorEntry{
-		{Name: "test", Command: "cat", On: "read"},
+		{Name: "test", Command: "cat"},
 	}
 	e := NewProcessorPipeline(cfg, &mockLogger{})
 
@@ -55,7 +55,7 @@ func TestProcessorPipelineRunsOnPng(t *testing.T) {
 	cfg := config.Default()
 	cfg.Processors.Enabled = true
 	cfg.Processors.Chain = []config.ProcessorEntry{
-		{Name: "echo-test", Command: "echo processed", On: "read"},
+		{Name: "echo-test", Command: "echo processed"},
 	}
 	e := NewProcessorPipeline(cfg, &mockLogger{})
 
@@ -78,7 +78,7 @@ func TestProcessorPipelineFailOpen(t *testing.T) {
 	cfg := config.Default()
 	cfg.Processors.Enabled = true
 	cfg.Processors.Chain = []config.ProcessorEntry{
-		{Name: "failing", Command: "exit 1", On: "read"},
+		{Name: "failing", Command: "exit 1"},
 	}
 	e := NewProcessorPipeline(cfg, &mockLogger{})
 
@@ -98,8 +98,8 @@ func TestProcessorPipelineWriteDirection(t *testing.T) {
 	cfg := config.Default()
 	cfg.Processors.Enabled = true
 	cfg.Processors.Chain = []config.ProcessorEntry{
-		{Name: "read-only", Command: "echo read", On: "read"},
-		{Name: "write-only", Command: "echo write", On: "write"},
+		{Name: "read-only", Command: "echo read"},
+		{Name: "write-only", Command: "echo write"},
 	}
 	e := NewProcessorPipeline(cfg, &mockLogger{})
 

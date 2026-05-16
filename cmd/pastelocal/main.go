@@ -18,9 +18,11 @@ import (
 
 	"github.com/pastelocal/pastelocal/internal/auth"
 	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/crypto"
 	"github.com/pastelocal/pastelocal/internal/doctor"
 	"github.com/pastelocal/pastelocal/internal/hostinstall"
 	"github.com/pastelocal/pastelocal/internal/proto"
+	"github.com/pastelocal/pastelocal/internal/relay"
 	"github.com/pastelocal/pastelocal/internal/service"
 	"github.com/pastelocal/pastelocal/internal/tui"
 )
@@ -1263,4 +1265,224 @@ func removeSnippet(port int, token, name string) error {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// ── relay / device pairing ───────────────────────────────────────────────────
+
+var relayCmd = &cobra.Command{
+	Use:   "relay",
+	Short: "Manage E2E encrypted relay for multi-device sync",
+	GroupID: "daemon",
+}
+
+var relayInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Initialize device keypair for relay",
+	RunE:  runRelayInit,
+}
+
+var relayPairCmd = &cobra.Command{
+	Use:   "pair <relay-url>",
+	Short: "Register device with relay server and get pairing code",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runRelayPair,
+}
+
+var relayDevicesCmd = &cobra.Command{
+	Use:   "devices",
+	Short: "List all devices on the relay",
+	RunE:  runRelayDevices,
+}
+
+var relayAddPeerCmd = &cobra.Command{
+	Use:   "add-peer <peer-device-id>",
+	Short: "Add a peer device for encrypted sharing",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runRelayAddPeer,
+}
+
+var (
+	relayFlagURL string
+	relayFlagTTL int
+)
+
+func init() {
+	relayInitCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+	relayPairCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+	relayDevicesCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+	relayAddPeerCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+
+	relayCmd.AddCommand(relayInitCmd)
+	relayCmd.AddCommand(relayPairCmd)
+	relayCmd.AddCommand(relayDevicesCmd)
+	relayCmd.AddCommand(relayAddPeerCmd)
+	rootCmd.AddCommand(relayCmd)
+}
+
+func runRelayInit(cmd *cobra.Command, args []string) error {
+	// Generate keypair.
+	kp, err := crypto.GenerateKeyPair()
+	if err != nil {
+		return fail("generating keypair: %v", err)
+	}
+
+	deviceID := kp.DeviceID()
+	fingerprint := kp.Fingerprint()
+
+	// Save keypair to file.
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
+		return fail("creating directory: %v", err)
+	}
+
+	if err := os.WriteFile(keyPath, []byte(kp.PrivateKeyBase64()), 0600); err != nil {
+		return fail("saving keypair: %v", err)
+	}
+
+	fmt.Printf("Device initialized successfully.\n")
+	fmt.Printf("Device ID:     %s\n", deviceID)
+	fmt.Printf("Fingerprint:   %s\n", fingerprint)
+	fmt.Printf("Key saved to:  %s\n", keyPath)
+	fmt.Printf("\nNext step: pastelocal relay pair <relay-url>\n")
+	return nil
+}
+
+func runRelayPair(cmd *cobra.Command, args []string) error {
+	url := args[0]
+
+	// Load keypair.
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fail("device key not found. Run 'pastelocal relay init' first: %v", err)
+	}
+
+	kp, err := crypto.LoadKeyPairFromBase64(string(keyData))
+	if err != nil {
+		return fail("loading keypair: %v", err)
+	}
+
+	deviceID := kp.DeviceID()
+	fingerprint := kp.Fingerprint()
+
+	// Create relay client and register.
+	client := relay.NewClient(url, deviceID, kp, "")
+	resp, err := client.Register()
+	if err != nil {
+		return fail("registering with relay: %v", err)
+	}
+
+	if !resp.OK {
+		return fail("registration failed: %s", resp.Error)
+	}
+
+	fmt.Printf("Device registered successfully.\n")
+	fmt.Printf("Device ID:       %s\n", deviceID)
+	fmt.Printf("Fingerprint:     %s\n", fingerprint)
+	fmt.Printf("Auth token:      %s\n", resp.Token)
+	fmt.Printf("\nShare this fingerprint with peers to add them:\n")
+	fmt.Printf("  %s\n", fingerprint)
+	fmt.Printf("\nTo add a peer:\n")
+	fmt.Printf("  pastelocal relay add-peer <peer-device-id>\n")
+
+	// Save token.
+	tokenPath := filepath.Join(expandHome("~/.config/pastelocal"), "relay-token")
+	if err := os.WriteFile(tokenPath, []byte(resp.Token), 0600); err != nil {
+		return fail("saving token: %v", err)
+	}
+	fmt.Printf("Token saved to:  %s\n", tokenPath)
+
+	return nil
+}
+
+func runRelayDevices(cmd *cobra.Command, args []string) error {
+	// Load keypair.
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fail("device key not found. Run 'pastelocal relay init' first: %v", err)
+	}
+
+	kp, err := crypto.LoadKeyPairFromBase64(string(keyData))
+	if err != nil {
+		return fail("loading keypair: %v", err)
+	}
+
+	// Load token.
+	tokenPath := filepath.Join(expandHome("~/.config/pastelocal"), "relay-token")
+	tokenData, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return fail("relay token not found. Run 'pastelocal relay pair' first: %v", err)
+	}
+
+	client := relay.NewClient(relayFlagURL, kp.DeviceID(), kp, string(tokenData))
+	resp, err := client.ListDevices()
+	if err != nil {
+		return fail("listing devices: %v", err)
+	}
+
+	if !resp.OK {
+		return fail("listing devices failed: %s", resp.Error)
+	}
+
+	if len(resp.Devices) == 0 {
+		fmt.Println("No devices registered on relay.")
+		return nil
+	}
+
+	fmt.Printf("%-40s %-20s %s\n", "DEVICE ID", "FINGERPRINT", "LAST SEEN")
+	for _, dev := range resp.Devices {
+		lastSeen := time.Unix(dev.LastSeen, 0).Format("2006-01-02 15:04:05")
+		fmt.Printf("%-40s %-20s %s\n", dev.DeviceID, dev.Fingerprint, lastSeen)
+	}
+
+	return nil
+}
+
+func runRelayAddPeer(cmd *cobra.Command, args []string) error {
+	peerDeviceID := args[0]
+
+	// Load keypair.
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fail("device key not found. Run 'pastelocal relay init' first: %v", err)
+	}
+
+	kp, err := crypto.LoadKeyPairFromBase64(string(keyData))
+	if err != nil {
+		return fail("loading keypair: %v", err)
+	}
+
+	// Load token.
+	tokenPath := filepath.Join(expandHome("~/.config/pastelocal"), "relay-token")
+	tokenData, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return fail("relay token not found. Run 'pastelocal relay pair' first: %v", err)
+	}
+
+	client := relay.NewClient(relayFlagURL, kp.DeviceID(), kp, string(tokenData))
+	resp, err := client.AddPeer(peerDeviceID)
+	if err != nil {
+		return fail("adding peer: %v", err)
+	}
+
+	if !resp.OK {
+		return fail("adding peer failed: %s", resp.Error)
+	}
+
+	fmt.Printf("Peer added: %s\n", peerDeviceID)
+	return nil
+}
+
+// expandHome replaces a leading ~ with the user's home directory.
+func expandHome(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[1:])
 }

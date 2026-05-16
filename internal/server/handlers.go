@@ -12,6 +12,7 @@ import (
 
 	"github.com/pastelocal/pastelocal/internal/auth"
 	"github.com/pastelocal/pastelocal/internal/clipboard"
+	"github.com/pastelocal/pastelocal/internal/crypto"
 	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 	"github.com/pastelocal/pastelocal/internal/proto"
 )
@@ -293,6 +294,30 @@ func (s *Server) handleClipboardPost(w http.ResponseWriter, r *http.Request) {
 	if err := s.writer.Write(r.Context(), content); err != nil {
 		cliperr.WriteJSON(w, cliperr.NewWithMessage("CB1006", err.Error()))
 		return
+	}
+
+	// Step 8b: Upload to relay if enabled and auto-upload is on.
+	if s.relayClient != nil && s.cfg.Relay.AutoUpload {
+		go func() {
+			nonce, err := crypto.GenerateNonce()
+			if err != nil {
+				s.logger.Warn("failed to generate nonce for relay upload", "err", err)
+				return
+			}
+			// For now, encrypt with own key (placeholder - should encrypt for peers)
+			sharedSecret := s.relayKeyPair.PrivateKey.Bytes()
+			encryptedData, err := crypto.Encrypt(content.Data, sharedSecret, nonce)
+			if err != nil {
+				s.logger.Warn("failed to encrypt for relay upload", "err", err)
+				return
+			}
+			_, err = s.relayClient.Upload(content.Format, encryptedData, nonce, s.cfg.Relay.UploadTTL)
+			if err != nil {
+				s.logger.Warn("failed to upload to relay", "err", err)
+			} else {
+				s.logger.Info("uploaded to relay", "format", content.Format, "size", len(content.Data))
+			}
+		}()
 	}
 
 	// Step 9: Build success response.

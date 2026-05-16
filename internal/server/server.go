@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -15,6 +17,8 @@ import (
 	"github.com/pastelocal/pastelocal/internal/auth"
 	"github.com/pastelocal/pastelocal/internal/clipboard"
 	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/crypto"
+	"github.com/pastelocal/pastelocal/internal/relay"
 )
 
 // BinaryVersion is set at build time via -ldflags.
@@ -39,6 +43,8 @@ type Server struct {
 	processors     *ProcessorPipeline
 	watchHub       *WatchHub
 	httpServer     *http.Server
+	relayClient    *relay.Client
+	relayKeyPair   *crypto.KeyPair
 }
 
 // New creates a new Server. The Server will listen on the port specified in cfg,
@@ -62,6 +68,27 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 	if cfg.History.Enabled {
 		token, _ := tokenStore.Retrieve()
 		s.history = NewHistoryBuffer(cfg.History.Size, cfg.History.TTL, token)
+	}
+
+	// Initialize relay client if enabled.
+	if cfg.Relay.Enabled {
+		// Load device keypair.
+		keyData, err := os.ReadFile(expandPath(cfg.Relay.DeviceKeyPath))
+		if err == nil {
+			kp, err := crypto.LoadKeyPairFromBase64(string(keyData))
+			if err == nil {
+				// Load auth token.
+				tokenData, err := os.ReadFile(expandPath(cfg.Relay.AuthTokenPath))
+				if err == nil {
+					s.relayKeyPair = kp
+					s.relayClient = relay.NewClient(cfg.Relay.RelayURL, kp.DeviceID(), kp, string(tokenData))
+					logger.Info("relay client initialized", "device_id", kp.DeviceID())
+				}
+			}
+		}
+		if s.relayClient == nil {
+			logger.Warn("relay enabled but failed to initialize (run 'pastelocal relay pair' first)")
+		}
 	}
 
 	// Pre-fill the semaphore so all slots are available.
@@ -182,6 +209,18 @@ func (s *Server) rejectNonLoopbackConnCtx(ctx context.Context, c net.Conn) conte
 		return ctx
 	}
 	return ctx
+}
+
+// expandPath replaces a leading ~ with the user's home directory.
+func expandPath(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[1:])
 }
 
 // Handler returns the HTTP handler for the server. Useful for testing.

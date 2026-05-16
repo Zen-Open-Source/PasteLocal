@@ -39,9 +39,12 @@ func main() {
 	// Snippet mode: fetch a named snippet.
 	snippet := flag.String("snippet", "", "fetch a named snippet by name")
 
+	// Relay mode: fetch from relay instead of local daemon.
+	relayURL := flag.String("relay", "", "relay URL to fetch from (e.g., http://localhost:7332)")
+
 	flag.Parse()
 
-	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index, *snippet))
+	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index, *snippet, *relayURL))
 }
 
 // expandHome replaces a leading ~ with the user's home directory.
@@ -65,7 +68,7 @@ func readToken(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int, snippetName string) int {
+func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int, snippetName string, relayURL string) int {
 	token, err := readToken(tokenFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading token: %v\n", err)
@@ -83,6 +86,11 @@ func run(port int, outDir string, timeout time.Duration, tokenFile string, sendP
 	// Send mode: push a file to the local clipboard.
 	if sendPath != "" {
 		return runSend(client, baseURL, token, sendPath, sendFormat)
+	}
+
+	// Relay mode: fetch from relay instead of local daemon.
+	if relayURL != "" {
+		return runRelayFetch(client, relayURL, outDir)
 	}
 
 	// Snippet mode: fetch a named snippet.
@@ -684,6 +692,102 @@ func runSnippetFetch(client *http.Client, baseURL, token, outDir, name string) i
 		return 4
 	}
 
+	return 0
+}
+
+// runRelayFetch fetches clipboard data from relay server.
+func runRelayFetch(client *http.Client, relayURL, outDir string) int {
+	// Load device key and token.
+	keyPath := expandHome("~/.config/pastelocal/device-key")
+	tokenPath := expandHome("~/.config/pastelocal/relay-token")
+
+	_, err := os.ReadFile(keyPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "device key not found. Run 'pastelocal relay init' first: %v\n", err)
+		return 10
+	}
+
+	tokenData, err := os.ReadFile(tokenPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "relay token not found. Run 'pastelocal relay pair' first: %v\n", err)
+		return 10
+	}
+
+	// Load keypair - need crypto package
+	// For now, use simple HTTP download without decryption (placeholder)
+	// Full implementation would decrypt the data using the keypair
+
+	req, err := http.NewRequest("GET", relayURL+"/api/v1/download/self", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating request: %v\n", err)
+		return 10
+	}
+	req.Header.Set("Authorization", "Bearer "+string(tokenData))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error fetching from relay: %v\n", err)
+		return 10
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		fmt.Fprintf(os.Stderr, "no data available on relay\n")
+		return 3
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "relay returned status %d\n", resp.StatusCode)
+		return 10
+	}
+
+	var downloadResp struct {
+		OK       bool   `json:"ok"`
+		Format   string `json:"format"`
+		Data     string `json:"data"`
+		Nonce    string `json:"nonce"`
+		Error    string `json:"error"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&downloadResp); err != nil {
+		fmt.Fprintf(os.Stderr, "error decoding response: %v\n", err)
+		return 10
+	}
+
+	if !downloadResp.OK {
+		fmt.Fprintf(os.Stderr, "relay error: %s\n", downloadResp.Error)
+		return 10
+	}
+
+	// Decode data (currently base64 encrypted, should decrypt here)
+	var data []byte
+	if downloadResp.Format == "png" {
+		// For now, return the encrypted data as-is (placeholder)
+		// Full implementation would decrypt using crypto package
+		data, err = base64.StdEncoding.DecodeString(downloadResp.Data)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error decoding base64: %v\n", err)
+			return 10
+		}
+	} else {
+		// Text - return as-is (placeholder for decryption)
+		data = []byte(downloadResp.Data)
+	}
+
+	// Write to file
+	path, err := writeFile(data, downloadResp.Format, outDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error writing file: %v\n", err)
+		return 10
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error resolving absolute path: %v\n", err)
+		return 10
+	}
+
+	fmt.Println(absPath)
 	return 0
 }
 

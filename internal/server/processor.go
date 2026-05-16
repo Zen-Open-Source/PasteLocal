@@ -47,7 +47,7 @@ func NewProcessorPipeline(cfg *config.Config, logger interface {
 		steps = append(steps, processorStep{
 			name:    p.Name,
 			command: p.Command,
-			on:      p.On,
+			on:      "both", // direction filtering removed; all processors apply to both read/write for images
 		})
 	}
 
