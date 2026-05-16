@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pastelocal/pastelocal/internal/crypto"
 	"github.com/pastelocal/pastelocal/internal/errors"
 	"github.com/pastelocal/pastelocal/internal/proto"
+	"github.com/pastelocal/pastelocal/internal/relay"
 )
 
 var randChars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -695,13 +697,12 @@ func runSnippetFetch(client *http.Client, baseURL, token, outDir, name string) i
 	return 0
 }
 
-// runRelayFetch fetches clipboard data from relay server.
-func runRelayFetch(client *http.Client, relayURL, outDir string) int {
-	// Load device key and token.
+// runRelayFetch fetches clipboard data from the relay using E2EE.
+func runRelayFetch(_ *http.Client, relayURL, outDir string) int {
 	keyPath := expandHome("~/.config/pastelocal/device-key")
 	tokenPath := expandHome("~/.config/pastelocal/relay-token")
 
-	_, err := os.ReadFile(keyPath)
+	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "device key not found. Run 'pastelocal relay init' first: %v\n", err)
 		return 10
@@ -713,68 +714,102 @@ func runRelayFetch(client *http.Client, relayURL, outDir string) int {
 		return 10
 	}
 
-	// Load keypair - need crypto package
-	// For now, use simple HTTP download without decryption (placeholder)
-	// Full implementation would decrypt the data using the keypair
-
-	req, err := http.NewRequest("GET", relayURL+"/api/v1/download/self", nil)
+	kp, err := crypto.LoadKeyPairFromBase64(strings.TrimSpace(string(keyData)))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error creating request: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to load device keypair: %v\n", err)
 		return 10
 	}
-	req.Header.Set("Authorization", "Bearer "+string(tokenData))
 
-	resp, err := client.Do(req)
+	deviceID := kp.DeviceID()
+	token := strings.TrimSpace(string(tokenData))
+
+	rclient := relay.NewClient(relayURL, deviceID, kp, token)
+
+	// 1. See what is waiting for us
+	inbox, err := rclient.ListInbox()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error fetching from relay: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to list relay inbox: %v\n", err)
 		return 10
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		fmt.Fprintf(os.Stderr, "no data available on relay\n")
+	if !inbox.OK {
+		fmt.Fprintf(os.Stderr, "relay error: %s\n", inbox.Error)
+		return 10
+	}
+	if len(inbox.Pending) == 0 {
+		fmt.Fprintf(os.Stderr, "no pending clipboard items on the relay for this device\n")
 		return 3
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "relay returned status %d\n", resp.StatusCode)
-		return 10
-	}
-
-	var downloadResp struct {
-		OK       bool   `json:"ok"`
-		Format   string `json:"format"`
-		Data     string `json:"data"`
-		Nonce    string `json:"nonce"`
-		Error    string `json:"error"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&downloadResp); err != nil {
-		fmt.Fprintf(os.Stderr, "error decoding response: %v\n", err)
-		return 10
-	}
-
-	if !downloadResp.OK {
-		fmt.Fprintf(os.Stderr, "relay error: %s\n", downloadResp.Error)
-		return 10
-	}
-
-	// Decode data (currently base64 encrypted, should decrypt here)
-	var data []byte
-	if downloadResp.Format == "png" {
-		// For now, return the encrypted data as-is (placeholder)
-		// Full implementation would decrypt using crypto package
-		data, err = base64.StdEncoding.DecodeString(downloadResp.Data)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error decoding base64: %v\n", err)
-			return 10
+	// For MVP: pick the most recent pending item (or the only one)
+	pending := inbox.Pending[0]
+	for _, p := range inbox.Pending {
+		if p.Timestamp > pending.Timestamp {
+			pending = p
 		}
-	} else {
-		// Text - return as-is (placeholder for decryption)
-		data = []byte(downloadResp.Data)
+	}
+	senderID := pending.SenderDeviceID
+
+	fmt.Fprintf(os.Stderr, "fetching from peer %s (format=%s)...\n", pending.Fingerprint, pending.Format)
+
+	// 2. Fetch the encrypted blob
+	downloadResp, err := rclient.FetchFromInbox(senderID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to fetch from inbox: %v\n", err)
+		return 10
+	}
+	if !downloadResp.OK {
+		fmt.Fprintf(os.Stderr, "relay fetch error: %s\n", downloadResp.Error)
+		return 10
 	}
 
-	// Write to file
+	// 3. Resolve the sender's public key (query the relay for device list)
+	devicesResp, err := rclient.ListDevices()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to list devices for pubkey lookup: %v\n", err)
+		return 10
+	}
+	var senderPubKeyB64 string
+	for _, d := range devicesResp.Devices {
+		if d.DeviceID == senderID {
+			senderPubKeyB64 = d.PublicKey
+			break
+		}
+	}
+	if senderPubKeyB64 == "" {
+		fmt.Fprintf(os.Stderr, "could not find public key for sender %s\n", senderID)
+		return 10
+	}
+
+	senderPub, err := crypto.ParsePublicKey(senderPubKeyB64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse sender public key: %v\n", err)
+		return 10
+	}
+
+	// 4. Decrypt the bytes we already fetched from the inbox
+	encrypted, err := base64.StdEncoding.DecodeString(downloadResp.Data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "base64 decode failed: %v\n", err)
+		return 10
+	}
+	nonce, err := base64.StdEncoding.DecodeString(downloadResp.Nonce)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "nonce decode failed: %v\n", err)
+		return 10
+	}
+
+	shared, err := kp.SharedSecret(senderPub)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ECDH failed: %v\n", err)
+		return 10
+	}
+	data, err := crypto.Decrypt(encrypted, shared, nonce)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "decryption failed (wrong peer key or corrupted data): %v\n", err)
+		return 10
+	}
+
+	// 5. Write file exactly like the SSH path
 	path, err := writeFile(data, downloadResp.Format, outDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error writing file: %v\n", err)

@@ -329,3 +329,70 @@ func (c *Client) DownloadAndDecrypt(senderPublicKey *ecdh.PublicKey) ([]byte, st
 
 	return data, downloadResp.Format, nil
 }
+
+// --- Inbox support (new endpoints for receiving from peers) ---
+
+type InboxListResponse struct {
+	OK      bool               `json:"ok"`
+	Pending []InboxPendingItem `json:"pending,omitempty"`
+	Error   string             `json:"error,omitempty"`
+}
+
+type InboxPendingItem struct {
+	SenderDeviceID string `json:"sender_device_id"`
+	Fingerprint    string `json:"fingerprint"`
+	Format         string `json:"format"`
+	Timestamp      int64  `json:"timestamp"`
+	BlobID         string `json:"blob_id"`
+}
+
+// ListInbox returns the list of pending clips sent to this device by peers.
+func (c *Client) ListInbox() (*InboxListResponse, error) {
+	req, err := http.NewRequest("GET", c.relayURL+"/api/v1/inbox", nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing inbox: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var listResp InboxListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return &listResp, nil
+}
+
+// FetchFromInbox downloads the encrypted blob sent by a specific peer.
+func (c *Client) FetchFromInbox(senderDeviceID string) (*DownloadResponse, error) {
+	url := c.relayURL + "/api/v1/inbox/" + senderDeviceID
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching from inbox: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return &DownloadResponse{OK: false, Error: "no data from that sender"}, nil
+	}
+
+	var downloadResp DownloadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&downloadResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return &downloadResp, nil
+}

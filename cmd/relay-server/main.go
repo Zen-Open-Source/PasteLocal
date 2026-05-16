@@ -75,6 +75,8 @@ func main() {
 	mux.HandleFunc("/api/v1/download/", s.handleDownload) // requires auth
 	mux.HandleFunc("/api/v1/devices", s.handleListDevices)
 	mux.HandleFunc("/api/v1/peers", s.handlePeers) // GET list, POST add
+	mux.HandleFunc("/api/v1/inbox", s.handleInboxList)
+	mux.HandleFunc("/api/v1/inbox/", s.handleInboxFetch) // /api/v1/inbox/{sender}
 	mux.HandleFunc("/health", s.handleHealth)
 
 	addr := ":" + port
@@ -338,6 +340,100 @@ func (s *Server) handleAddPeer(w http.ResponseWriter, r *http.Request) {
 	log.Printf("peer added: %s -> %s", deviceID, req.PeerDeviceID)
 }
 
+// handleInboxList returns pending clips in the authenticated device's inbox.
+func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	token := parseBearer(r.Header.Get("Authorization"))
+	if token == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	s.mu.RLock()
+	deviceID, ok := s.tokens[token]
+	s.mu.RUnlock()
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	s.mu.RLock()
+	senders := s.inbox[deviceID]
+	var pending []map[string]any
+	for senderID, blobID := range senders {
+		if blob, exists := s.blobs[blobID]; exists {
+			fp := ""
+			if dev, ok := s.devices[senderID]; ok {
+				fp = dev.Fingerprint
+			}
+			pending = append(pending, map[string]any{
+				"sender_device_id": senderID,
+				"fingerprint":      fp,
+				"format":           blob.Format,
+				"timestamp":        blob.Timestamp.Unix(),
+				"blob_id":          blobID,
+			})
+		}
+	}
+	s.mu.RUnlock()
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":      true,
+		"pending": pending,
+	})
+}
+
+// handleInboxFetch returns the encrypted blob for a specific sender in the inbox.
+func (s *Server) handleInboxFetch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	token := parseBearer(r.Header.Get("Authorization"))
+	if token == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	s.mu.RLock()
+	deviceID, ok := s.tokens[token]
+	s.mu.RUnlock()
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	senderID := strings.TrimPrefix(r.URL.Path, "/api/v1/inbox/")
+	if senderID == "" {
+		http.Error(w, "missing sender_device_id", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	blobID, hasSender := s.inbox[deviceID][senderID]
+	blob, hasBlob := s.blobs[blobID]
+	s.mu.RUnlock()
+
+	if !hasSender || !hasBlob {
+		http.Error(w, "no data from that sender", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":        true,
+		"blob_id":   blob.ID,
+		"device_id": blob.DeviceID, // the sender
+		"format":    blob.Format,
+		"data":      blob.Data,
+		"nonce":     blob.Nonce,
+	})
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	deviceCount := len(s.devices)
@@ -362,6 +458,14 @@ func (s *Server) cleanupExpiredBlobs() {
 		for id, blob := range s.blobs {
 			if blob.TTL > 0 && now.Sub(blob.Timestamp) > time.Duration(blob.TTL)*time.Second {
 				delete(s.blobs, id)
+				// Also remove from any inboxes
+				for _, senders := range s.inbox {
+					for sender, bID := range senders {
+						if bID == id {
+							delete(senders, sender)
+						}
+					}
+				}
 			}
 		}
 		s.mu.Unlock()
