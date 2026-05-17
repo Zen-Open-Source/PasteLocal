@@ -1,4 +1,4 @@
-# pastelocal
+# PasteLocal
 
 ![Header](assets/pastelocal-header.png)
 
