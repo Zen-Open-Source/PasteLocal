@@ -12,7 +12,7 @@ build:
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald ./cmd/pastelocald
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote ./cmd/pastelocal-remote
 
-build-all: build-linux-amd64 build-linux-arm64 build-darwin-arm64 build-darwin-amd64
+build-all: clean build-linux-amd64 build-linux-arm64 build-darwin-arm64 build-darwin-amd64
 
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote-linux-amd64 ./cmd/pastelocal-remote
@@ -27,10 +27,12 @@ build-linux-arm64:
 build-darwin-arm64:
 	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-darwin-arm64 ./cmd/pastelocal
 	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald-darwin-arm64 ./cmd/pastelocald
+	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote-darwin-arm64 ./cmd/pastelocal-remote
 
 build-darwin-amd64:
 	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-darwin-amd64 ./cmd/pastelocal
 	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald-darwin-amd64 ./cmd/pastelocald
+	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote-darwin-amd64 ./cmd/pastelocal-remote
 
 test:
 	$(GO) test -v -race -cover ./internal/...
@@ -43,7 +45,7 @@ lint: vet
 	gosec ./...
 
 clean:
-	rm -rf bin/
+	rm -rf bin/ dist/
 
 install: build
 	install -m 0755 bin/pastelocal $(GOPATH)/bin/pastelocal
