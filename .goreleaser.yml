@@ -97,12 +97,6 @@ signs:
     artifacts: archive
     certificate: ""
 
-docker_files:
-  - id: remote
-    dockerfile: Dockerfile.remote
-    builds:
-      - pastelocal-remote
-
 dockers:
   - id: remote-amd64
     ids:
