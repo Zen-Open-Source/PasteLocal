@@ -214,6 +214,18 @@ We especially welcome improvements to the relay feature and better agentic codin
 
 ---
 
+## Future Vision
+
+PasteLocal already solves the core problem of reliably getting your local clipboard — especially screenshots — into remote agentic coding sessions over SSH.
+
+That said, we have a bigger vision for what this experience could become.
+
+The ideal workflow would feel almost native: paste an image directly in your SSH client (like Termius), have it automatically uploaded to the remote machine with a progress bar, and have the path instantly available in your agentic coding tool.
+
+We see PasteLocal as the foundation for deeper, more seamless integrations with terminals, SSH clients, and AI coding environments. If you're interested in helping push toward that future, we'd love to hear from you.
+
+---
+
 ## Acknowledgments
 
 This project was developed with significant assistance from **Grok Build** (xAI).  
