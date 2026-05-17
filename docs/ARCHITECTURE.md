@@ -2,7 +2,7 @@
 
 ## Components Overview
 
-pastelocal has four components, each with a single responsibility:
+pastelocal has four core components, plus one experimental component:
 
 ### 1. Daemon (`pastelocald`)
 
@@ -66,6 +66,23 @@ It instructs Claude to:
 2. Read the resulting image file
 3. Delete the file
 4. Confirm to the user: "Got it, image attached."
+
+### 5. Experimental Relay Server (Preview)
+
+A standalone relay server (`cmd/relay-server`) and supporting client libraries that enable E2E-encrypted clipboard sharing between multiple devices without requiring direct SSH tunnels.
+
+**Components:**
+- `internal/crypto` — X25519 keypairs, ECDH, HKDF + AES-GCM encryption helpers
+- `internal/relay` — Client for device registration, peer management, inbox-based encrypted blob exchange
+- `cmd/relay-server` — Lightweight HTTP relay supporting device pairing, targeted uploads (`/upload/{receiver}`), and inbox consumption
+
+**Current Limitations (as of launch):**
+- Relay server is in-memory only (no persistence)
+- Sending from the daemon is still placeholder/incomplete
+- Background polling and real-time notifications are not yet implemented
+- Intended for testing and non-critical use
+
+The relay feature is under active development. The core SSH-based workflow remains the recommended production path.
 
 ---
 
