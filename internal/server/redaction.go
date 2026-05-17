@@ -14,10 +14,10 @@ type RedactionEngine struct {
 }
 
 type compiledRule struct {
-	name    string
-	action  string // "redact" or "block"
-	re      *regexp.Regexp
-	desc    string
+	name   string
+	action string // "redact" or "block"
+	re     *regexp.Regexp
+	desc   string
 }
 
 // NewRedactionEngine creates a new engine from the config.

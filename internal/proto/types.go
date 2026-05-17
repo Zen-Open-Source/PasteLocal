@@ -6,19 +6,19 @@ const ProtocolVersion = 2
 // ClipboardResponse is the JSON response for GET /clipboard on success.
 type ClipboardResponse struct {
 	OK         bool   `json:"ok"`
-	Image      string `json:"image,omitempty"`       // base64-encoded image (png/jpeg/etc)
-	Text       string `json:"text,omitempty"`         // plain text content (when format is text)
-	Format     string `json:"format"`                 // "png", "text", "html"
+	Image      string `json:"image,omitempty"` // base64-encoded image (png/jpeg/etc)
+	Text       string `json:"text,omitempty"`  // plain text content (when format is text)
+	Format     string `json:"format"`          // "png", "text", "html"
 	ByteCount  int64  `json:"byte_count"`
-	CapturedAt string `json:"captured_at"`            // RFC3339
-	ID         string `json:"id,omitempty"`            // unique ID for history entries
+	CapturedAt string `json:"captured_at"`  // RFC3339
+	ID         string `json:"id,omitempty"` // unique ID for history entries
 }
 
 // ClipboardWriteRequest is the JSON request for POST /clipboard.
 type ClipboardWriteRequest struct {
-	Format string `json:"format"`           // "png" or "text"
-	Image  string `json:"image,omitempty"`  // base64-encoded image (when format is png)
-	Text   string `json:"text,omitempty"`   // plain text (when format is text)
+	Format string `json:"format"`          // "png" or "text"
+	Image  string `json:"image,omitempty"` // base64-encoded image (when format is png)
+	Text   string `json:"text,omitempty"`  // plain text (when format is text)
 }
 
 // ClipboardWriteResponse is the JSON response for POST /clipboard on success.
@@ -41,6 +41,9 @@ type VersionResponse struct {
 	OK              bool   `json:"ok"`
 	ProtocolVersion int    `json:"protocol_version"`
 	BinaryVersion   string `json:"binary_version"`
+	// Watch-related status (populated by daemon when clipboard watching is enabled).
+	WatchEnabled        bool   `json:"watch_enabled"`
+	LastClipboardChange string `json:"last_clipboard_change,omitempty"`
 }
 
 // HealthResponse is the JSON response for GET /health.
@@ -59,13 +62,13 @@ type HistoryEntry struct {
 
 // HistoryResponse is the JSON response for GET /clipboard/history.
 type HistoryResponse struct {
-	OK     bool            `json:"ok"`
-	Items  []HistoryEntry  `json:"items"`
+	OK    bool           `json:"ok"`
+	Items []HistoryEntry `json:"items"`
 }
 
 // WatchNotification is the JSON payload pushed over the WebSocket.
 type WatchNotification struct {
-	Event      string `json:"event"`       // "clipboard_changed"
+	Event      string `json:"event"` // "clipboard_changed"
 	CapturedAt string `json:"captured_at"`
 	Format     string `json:"format"`
 	ID         string `json:"id,omitempty"`
@@ -91,7 +94,7 @@ type SnippetListResponse struct {
 // SnippetSaveRequest is the JSON request for POST /snippets.
 type SnippetSaveRequest struct {
 	Name        string `json:"name"`
-	Format      string `json:"format"`      // "text" or "png"
+	Format      string `json:"format"` // "text" or "png"
 	Text        string `json:"text,omitempty"`
 	Image       string `json:"image,omitempty"` // base64
 	Description string `json:"description,omitempty"`

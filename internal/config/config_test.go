@@ -185,7 +185,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	original.Hosts = map[string]Host{
 		"server1": {
 			AddedAt:    time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC),
-			RemotePort:  22,
+			RemotePort: 22,
 			RemoteUser: "admin",
 			RemotePath: "/opt/app",
 			Termius:    false,
@@ -480,21 +480,21 @@ func TestMultipleHostsAddRemove(t *testing.T) {
 	hosts := map[string]Host{
 		"server1": {
 			AddedAt:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			RemotePort:  22,
+			RemotePort: 22,
 			RemoteUser: "admin",
 			RemotePath: "/opt/app",
 			Termius:    true,
 		},
 		"server2": {
 			AddedAt:    time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC),
-			RemotePort:  2222,
+			RemotePort: 2222,
 			RemoteUser: "deploy",
 			RemotePath: "/home/deploy",
 			Termius:    false,
 		},
 		"server3": {
 			AddedAt:    time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-			RemotePort:  22,
+			RemotePort: 22,
 			RemoteUser: "root",
 			RemotePath: "/root",
 			Termius:    false,
@@ -583,8 +583,8 @@ func TestMergeDefaultsAllZero(t *testing.T) {
 
 func TestMergeDefaultsPartialOverride(t *testing.T) {
 	cfg := &Config{
-		Port:    8080,
-		Hosts:   map[string]Host{"existing": {}},
+		Port:  8080,
+		Hosts: map[string]Host{"existing": {}},
 	}
 
 	mergeDefaults(cfg)
@@ -831,14 +831,14 @@ func TestSaveAndReloadWithHosts(t *testing.T) {
 	cfg.Port = 8080
 	cfg.AddHost("host1", Host{
 		AddedAt:    time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
-		RemotePort:  22,
+		RemotePort: 22,
 		RemoteUser: "admin",
 		RemotePath: "/opt",
 		Termius:    true,
 	})
 	cfg.AddHost("host2", Host{
 		AddedAt:    time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		RemotePort:  2222,
+		RemotePort: 2222,
 		RemoteUser: "deploy",
 		RemotePath: "/home/deploy",
 		Termius:    false,
@@ -866,5 +866,31 @@ func TestSaveAndReloadWithHosts(t *testing.T) {
 	}
 	if !h1.Termius {
 		t.Error("host1.Termius = false, want true")
+	}
+}
+
+func TestWatchConfig(t *testing.T) {
+	// Default should be disabled (opt-in)
+	cfg := Default()
+	if cfg.Watch.Enabled {
+		t.Error("Watch.Enabled should default to false")
+	}
+
+	// Load from TOML with [watch] section
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.toml")
+	tomlContent := `port = 7331
+[watch]
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(tomlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !loaded.Watch.Enabled {
+		t.Error("Watch.Enabled should be true when set in config")
 	}
 }

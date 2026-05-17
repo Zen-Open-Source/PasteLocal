@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"net"
@@ -9,8 +10,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,6 +21,7 @@ import (
 	"github.com/pastelocal/pastelocal/internal/clipboard"
 	"github.com/pastelocal/pastelocal/internal/config"
 	"github.com/pastelocal/pastelocal/internal/crypto"
+	"github.com/pastelocal/pastelocal/internal/proto"
 	"github.com/pastelocal/pastelocal/internal/relay"
 )
 
@@ -26,25 +30,28 @@ var BinaryVersion = "0.1.0"
 
 // Server is the HTTP daemon that serves clipboard data to authorized remote hosts.
 type Server struct {
-	cfg            *config.Config
-	configPath     string
-	tokenStore     *auth.TokenStore
-	reader         clipboard.Reader
-	writer         clipboard.Writer
-	logger         *slog.Logger
-	sem            chan struct{} // semaphore for max_in_flight
-	mu             sync.Mutex   // serializes clipboard reads
-	lastRead       time.Time
-	lastReadSize   int64
-	lastReadFormat string
-	rateLimiter    *RateLimiter
-	history        *HistoryBuffer
-	redaction      *RedactionEngine
-	processors     *ProcessorPipeline
-	watchHub       *WatchHub
-	httpServer     *http.Server
-	relayClient    *relay.Client
-	relayKeyPair   *crypto.KeyPair
+	cfg                 *config.Config
+	configPath          string
+	tokenStore          *auth.TokenStore
+	reader              clipboard.Reader
+	writer              clipboard.Writer
+	logger              *slog.Logger
+	sem                 chan struct{} // semaphore for max_in_flight
+	mu                  sync.Mutex    // serializes clipboard reads
+	lastRead            time.Time
+	lastReadSize        int64
+	lastReadFormat      string
+	lastClipboardChange time.Time
+	watchEnabled        atomic.Bool
+	rateLimiter         *RateLimiter
+	history             *HistoryBuffer
+	redaction           *RedactionEngine
+	processors          *ProcessorPipeline
+	watchHub            *WatchHub
+	watcherStop         chan struct{} // for graceful Shutdown of the always-running watcher
+	httpServer          *http.Server
+	relayClient         *relay.Client
+	relayKeyPair        *crypto.KeyPair
 }
 
 // New creates a new Server. The Server will listen on the port specified in cfg,
@@ -63,6 +70,9 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 		processors:  NewProcessorPipeline(cfg, logger),
 		watchHub:    NewWatchHub(logger),
 	}
+
+	s.watchEnabled.Store(cfg.Watch.Enabled)
+	s.watcherStop = make(chan struct{})
 
 	// Initialize history buffer if enabled.
 	if cfg.History.Enabled {
@@ -90,6 +100,10 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 			logger.Warn("relay enabled but failed to initialize (run 'pastelocal relay pair' first)")
 		}
 	}
+
+	// Always start the watcher goroutine (it is a cheap no-op when disabled via the early continue).
+	// This ensures that SIGHUP/reload enabling the feature takes effect without daemon restart.
+	go s.startClipboardWatcher()
 
 	// Pre-fill the semaphore so all slots are available.
 	for i := 0; i < cfg.MaxInFlight; i++ {
@@ -139,6 +153,10 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	// Signal the always-running watcher goroutine to exit (ticker will stop on return).
+	if s.watcherStop != nil {
+		close(s.watcherStop)
+	}
 	return s.httpServer.Shutdown(shutdownCtx)
 }
 
@@ -147,6 +165,14 @@ func (s *Server) LastRead() (time.Time, int64, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lastRead, s.lastReadSize, s.lastReadFormat
+}
+
+// WatchStatus returns whether the clipboard watcher is enabled and the
+// timestamp of the most recent OS clipboard change detected by the watcher.
+func (s *Server) WatchStatus() (bool, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.watchEnabled.Load(), s.lastClipboardChange
 }
 
 // handleSignals responds to OS signals.
@@ -181,6 +207,8 @@ func (s *Server) reloadConfig() {
 	s.rateLimiter = NewRateLimiter(cfg.RateLimitPerMinute)
 	s.redaction = NewRedactionEngine(cfg)
 	s.processors = NewProcessorPipeline(cfg, s.logger)
+	s.watchEnabled.Store(cfg.Watch.Enabled)
+	s.watcherStop = make(chan struct{})
 	if cfg.History.Enabled && s.history == nil {
 		token, _ := s.tokenStore.Retrieve()
 		s.history = NewHistoryBuffer(cfg.History.Size, cfg.History.TTL, token)
@@ -246,4 +274,171 @@ func (s *Server) HandleHealth() http.HandlerFunc {
 // HandleVersion returns the handler function for /version.
 func (s *Server) HandleVersion() http.HandlerFunc {
 	return s.handleVersion
+}
+
+// startClipboardWatcher runs in a background goroutine when watch.enabled=true.
+// It polls the OS clipboard at a low frequency, using cheap AvailableFormats +
+// lightweight text checks most of the time, and occasional full image reads only
+// when an image is on the clipboard (to catch new screenshots). Changes are
+// debounced, filtered for insignificant noise, logged, used to update internal
+// last* state (for TUI/status), and pushed to watchHub subscribers so that
+// pastelocal-remote --watch (and future clients) can react without polling the
+// read endpoint.
+func (s *Server) startClipboardWatcher() {
+	const (
+		watchPollInterval  = 2 * time.Second
+		watchCtxTimeout    = 1200 * time.Millisecond
+		watchImageThrottle = 2200 * time.Millisecond
+		watchDebounce      = 600 * time.Millisecond
+		watchTinyTextMax   = 6
+	)
+
+	s.logger.Debug("clipboard watcher goroutine running", "poll_interval", "2s")
+	ticker := time.NewTicker(watchPollInterval)
+	defer ticker.Stop()
+
+	var (
+		lastFmtSig   string
+		lastTextHash string
+		lastImgHash  string
+		lastImgCheck time.Time
+		lastDetected time.Time
+	)
+
+	for range ticker.C {
+		// Always check for shutdown first (before the early "disabled" continue).
+		// This guarantees the stop signal is observable even when watch is disabled (the default).
+		select {
+		case <-s.watcherStop:
+			return
+		default:
+		}
+
+		if !s.watchEnabled.Load() {
+			// Reset memo state on disable so re-enable starts fresh (no stale debounce hashes)
+			lastFmtSig = ""
+			lastTextHash = ""
+			lastImgHash = ""
+			lastImgCheck = time.Time{}
+			lastDetected = time.Time{}
+			continue
+		}
+
+		// Use short ctx for each poll to avoid hanging on slow clipboard tools.
+		ctx, cancel := context.WithTimeout(context.Background(), watchCtxTimeout)
+
+		formats, fErr := s.reader.AvailableFormats(ctx)
+		if fErr != nil {
+			s.logger.Debug("clipboard watcher: read formats failed, ignoring tick", "err", fErr)
+			cancel()
+			continue
+		}
+
+		// Normalize for stable sig (platform tools may return formats in non-deterministic order)
+		sort.Strings(formats)
+		sig := strings.Join(formats, ",")
+		now := time.Now().UTC()
+
+		// Global debounce: ignore bursts.
+		if now.Sub(lastDetected) < watchDebounce {
+			lastFmtSig = sig
+			s.logger.Debug("clipboard watcher: debounce active, ignoring", "since_last_ms", now.Sub(lastDetected).Milliseconds())
+			cancel()
+			continue
+		}
+
+		potential := (sig != lastFmtSig)
+		lastFmtSig = sig
+
+		hasImg := false
+		hasTxt := false
+		for _, f := range formats {
+			lf := strings.ToLower(f)
+			if strings.Contains(lf, "png") || strings.Contains(lf, "image") || strings.Contains(lf, "jpeg") {
+				hasImg = true
+			}
+			if strings.Contains(lf, "text") || strings.Contains(lf, "utf") || strings.Contains(lf, "plain") {
+				hasTxt = true
+			}
+		}
+
+		var content *clipboard.Content
+		heavy := false
+
+		if potential {
+			c, e := s.reader.ReadContent(ctx)
+			if e == nil {
+				content = c
+				heavy = true
+			}
+		} else if hasTxt {
+			// Cheap text change detection for rapid typing / copies.
+			txt, te := s.reader.ReadText(ctx)
+			if te != nil {
+				s.logger.Debug("clipboard watcher: ReadText failed during watch", "err", te)
+			} else if len(txt) >= 4 {
+				h := fmt.Sprintf("%x", sha256.Sum256([]byte(txt)))[:12]
+				if h != lastTextHash {
+					potential = true
+					lastTextHash = h
+					content = &clipboard.Content{Data: []byte(txt), Format: "text"}
+				}
+			}
+		}
+
+		// Separate (non-else) check for images so mixed text+image clipboards (common for rich content/screenshots) still detect new images when the text path did not trigger a change.
+		if !potential && hasImg && now.Sub(lastImgCheck) > watchImageThrottle {
+			// Throttled image read: catches new screenshots without constant full loads.
+			lastImgCheck = now
+			img, ie := s.reader.ReadImage(ctx)
+			if ie != nil {
+				s.logger.Debug("clipboard watcher: ReadImage failed during watch", "err", ie)
+			} else if len(img) > 100 {
+				h := fmt.Sprintf("%x", sha256.Sum256(img))[:8]
+				if h != lastImgHash {
+					potential = true
+					lastImgHash = h
+					content = &clipboard.Content{Data: img, Format: "png"}
+					heavy = true
+				}
+			}
+		}
+
+		cancel()
+
+		if !potential || content == nil {
+			continue
+		}
+
+		// Final filter: drop tiny insignificant clipboard spam (e.g. single char).
+		if content.Format == "text" {
+			if len(content.Data) < watchTinyTextMax && !strings.ContainsAny(string(content.Data), " \n\t") {
+				s.logger.Debug("clipboard watcher: tiny text filtered", "len", len(content.Data))
+				continue
+			}
+		}
+
+		lastDetected = now
+
+		// Update internal state for TUI, status, and LastRead reuse.
+		s.mu.Lock()
+		s.lastClipboardChange = now
+		s.lastRead = now
+		s.lastReadSize = int64(len(content.Data))
+		s.lastReadFormat = content.Format
+		s.mu.Unlock()
+
+		s.logger.Info("clipboard watcher: meaningful change detected",
+			"format", content.Format,
+			"byte_count", len(content.Data),
+			"heavy_read", heavy,
+		)
+
+		// Push notification to any connected --watch clients via WS.
+		s.watchHub.Notify(proto.WatchNotification{
+			Event:      "clipboard_changed",
+			CapturedAt: now.Format(time.RFC3339),
+			Format:     content.Format,
+		})
+	}
 }

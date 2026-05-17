@@ -46,26 +46,28 @@ type tickMsg time.Time
 
 // Model holds the dashboard state.
 type Model struct {
-	cfg       *config.Config
-	cfgPath   string
-	port      int
-	running   bool
-	pid       int
-	uptime    string
-	healthy   bool
-	hosts     []hostStatus
-	lastRead  string
-	lastFmt   string
-	auditLen  int
-	width     int
-	height    int
-	quitting  bool
-	err       error
+	cfg                 *config.Config
+	cfgPath             string
+	port                int
+	running             bool
+	pid                 int
+	uptime              string
+	healthy             bool
+	hosts               []hostStatus
+	lastRead            string
+	lastFmt             string
+	watchEnabled        bool
+	lastClipboardChange string
+	auditLen            int
+	width               int
+	height              int
+	quitting            bool
+	err                 error
 }
 
 type hostStatus struct {
-	Alias  string
-	Status string
+	Alias   string
+	Status  string
 	Termius bool
 }
 
@@ -153,6 +155,17 @@ func (m Model) View() string {
 	b.WriteString(boxStyle.Render(lastReadBox))
 	b.WriteString("\n")
 
+	// Clipboard Watch status (critical for visibility success criterion)
+	watchStr := "disabled (opt-in via [watch] enabled = true in config)"
+	if m.watchEnabled {
+		watchStr = "enabled (detecting OS changes)"
+		if m.lastClipboardChange != "" {
+			watchStr = "enabled (last change: " + m.lastClipboardChange + ")"
+		}
+	}
+	b.WriteString(boxStyle.Render("  Clipboard Watch: " + watchStr))
+	b.WriteString("\n")
+
 	// Hosts
 	if len(m.hosts) > 0 {
 		var hostLines []string
@@ -191,6 +204,8 @@ func (m *Model) refresh() {
 	if err != nil {
 		m.running = false
 		m.healthy = false
+		m.watchEnabled = false
+		m.lastClipboardChange = ""
 		return
 	}
 	defer resp.Body.Close()
@@ -220,7 +235,12 @@ func (m *Model) refresh() {
 		defer verResp.Body.Close()
 		var verData map[string]interface{}
 		if json.NewDecoder(verResp.Body).Decode(&verData) == nil {
-			// Could extract more info if version endpoint returns it.
+			if w, ok := verData["watch_enabled"].(bool); ok {
+				m.watchEnabled = w
+			}
+			if lc, ok := verData["last_clipboard_change"].(string); ok {
+				m.lastClipboardChange = lc
+			}
 		}
 	}
 

@@ -28,11 +28,11 @@ type historyEntry struct {
 // clipboard reads. Data is encrypted at rest using AES-GCM with a
 // key derived from the auth token.
 type HistoryBuffer struct {
-	mu     sync.Mutex
+	mu      sync.Mutex
 	entries []*historyEntry
-	size   int
-	ttl    time.Duration
-	key    []byte // AES key derived from token
+	size    int
+	ttl     time.Duration
+	key     []byte // AES key derived from token
 }
 
 // NewHistoryBuffer creates a new HistoryBuffer with the given capacity and TTL.

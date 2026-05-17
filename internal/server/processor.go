@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/pastelocal/pastelocal/internal/config"
 	"github.com/pastelocal/pastelocal/internal/clipboard"
+	"github.com/pastelocal/pastelocal/internal/config"
 	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 )
 

@@ -258,7 +258,9 @@ func runSend(client *http.Client, baseURL, token, filePath, format string) int {
 	return 0
 }
 
-// runWatch connects to the WebSocket endpoint and prints notifications.
+// runWatch connects to the WebSocket /clipboard/watch endpoint (or falls back to polling)
+// and prints notifications. With daemon clipboard watching enabled, changes are
+// pushed proactively when the local OS clipboard changes (screenshots etc).
 func runWatch(baseURL, token string) int {
 	// For WebSocket, we need to use a WebSocket client.
 	// Convert http:// to ws://.

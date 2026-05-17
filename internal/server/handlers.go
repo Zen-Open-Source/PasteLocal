@@ -172,7 +172,7 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 			Event:     "clipboard_read",
 			ImageHash: fmt.Sprintf("%x", hash),
 			ByteCount: int64(len(content.Data)),
-			SourceIP:   remoteIP,
+			SourceIP:  remoteIP,
 			Auth:      token,
 		}
 		if err := WriteAudit(s.cfg.AuditLog, entry); err != nil {
@@ -334,7 +334,7 @@ func (s *Server) handleClipboardPost(w http.ResponseWriter, r *http.Request) {
 			Event:     "clipboard_write",
 			ImageHash: fmt.Sprintf("%x", hash),
 			ByteCount: int64(len(content.Data)),
-			SourceIP:   remoteIP,
+			SourceIP:  remoteIP,
 			Auth:      token,
 		}
 		if err := WriteAudit(s.cfg.AuditLog, entry); err != nil {
@@ -439,6 +439,13 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 		OK:              true,
 		ProtocolVersion: proto.ProtocolVersion,
 		BinaryVersion:   BinaryVersion,
+	}
+	// Populate optional watch status (available even without auth, for local TUI/dashboard).
+	if enabled, t := s.WatchStatus(); enabled || !t.IsZero() {
+		resp.WatchEnabled = enabled
+		if enabled && !t.IsZero() {
+			resp.LastClipboardChange = t.Format(time.RFC3339)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

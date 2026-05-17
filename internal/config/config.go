@@ -41,6 +41,7 @@ type Config struct {
 	Redaction          RedactionConfig `toml:"redaction"`
 	Processors         ProcessorConfig `toml:"processors"`
 	Relay              RelayConfig     `toml:"relay"`
+	Watch              WatchConfig     `toml:"watch"`
 }
 
 type MacOSConfig struct {
@@ -52,13 +53,13 @@ type LinuxConfig struct {
 }
 
 type Host struct {
-	AddedAt     time.Time   `toml:"added_at"`
-	RemotePort  int         `toml:"remote_port"`
-	RemoteUser  string      `toml:"remote_user"`
-	RemotePath  string      `toml:"remote_path"`
-	Termius     bool        `toml:"termius"`
-	Permissions []string    `toml:"permissions"` // "read", "write"
-	TokenHash   string      `toml:"token_hash"`  // SHA-256 of per-host token
+	AddedAt     time.Time `toml:"added_at"`
+	RemotePort  int       `toml:"remote_port"`
+	RemoteUser  string    `toml:"remote_user"`
+	RemotePath  string    `toml:"remote_path"`
+	Termius     bool      `toml:"termius"`
+	Permissions []string  `toml:"permissions"` // "read", "write"
+	TokenHash   string    `toml:"token_hash"`  // SHA-256 of per-host token
 }
 
 // HistoryConfig controls the clipboard history ring buffer.
@@ -77,16 +78,16 @@ type RedactionConfig struct {
 // RedactionRule defines a single content redaction rule.
 type RedactionRule struct {
 	Name        string `toml:"name"`
-	Pattern     string `toml:"pattern"`      // regex pattern
-	Action      string `toml:"action"`        // "redact" or "block"
+	Pattern     string `toml:"pattern"` // regex pattern
+	Action      string `toml:"action"`  // "redact" or "block"
 	Description string `toml:"description"`
 }
 
 // ProcessorConfig controls the clipboard processor pipeline.
 type ProcessorConfig struct {
-	Enabled    bool              `toml:"enabled"`
-	Timeout    int               `toml:"timeout_seconds"`
-	Chain      []ProcessorEntry  `toml:"chain"`
+	Enabled bool             `toml:"enabled"`
+	Timeout int              `toml:"timeout_seconds"`
+	Chain   []ProcessorEntry `toml:"chain"`
 }
 
 // ProcessorEntry represents a single processor in the pipeline.
@@ -97,13 +98,22 @@ type ProcessorEntry struct {
 
 // RelayConfig controls the E2E encrypted relay for multi-device sync.
 type RelayConfig struct {
-	Enabled      bool   `toml:"enabled"`
-	RelayURL     string `toml:"relay_url"`
-	DeviceID     string `toml:"device_id"`
+	Enabled       bool   `toml:"enabled"`
+	RelayURL      string `toml:"relay_url"`
+	DeviceID      string `toml:"device_id"`
 	DeviceKeyPath string `toml:"device_key_path"`
 	AuthTokenPath string `toml:"auth_token_path"`
-	AutoUpload   bool   `toml:"auto_upload"`
-	UploadTTL    int    `toml:"upload_ttl"` // seconds
+	AutoUpload    bool   `toml:"auto_upload"`
+	UploadTTL     int    `toml:"upload_ttl"` // seconds
+}
+
+// WatchConfig controls the optional local clipboard watcher in the daemon.
+// When enabled (opt-in), the daemon automatically detects meaningful
+// OS clipboard changes (screenshots, substantial text) using polling with
+// debouncing and filtering. Detected changes update internal state and
+// notify active /clipboard/watch subscribers.
+type WatchConfig struct {
+	Enabled bool `toml:"enabled"`
 }
 
 // mu protects file operations during Save to prevent concurrent writes.
@@ -135,14 +145,15 @@ func Default() *Config {
 			Timeout: 5,
 		},
 		Relay: RelayConfig{
-			Enabled:      false,
-			RelayURL:     "http://localhost:7332",
-			DeviceID:     "",
+			Enabled:       false,
+			RelayURL:      "http://localhost:7332",
+			DeviceID:      "",
 			DeviceKeyPath: "~/.config/pastelocal/device-key",
 			AuthTokenPath: "~/.config/pastelocal/relay-token",
-			AutoUpload:   false,
-			UploadTTL:    300,
+			AutoUpload:    false,
+			UploadTTL:     300,
 		},
+		Watch: WatchConfig{Enabled: false},
 	}
 }
 

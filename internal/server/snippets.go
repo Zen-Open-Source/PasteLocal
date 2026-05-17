@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/pastelocal/pastelocal/internal/snippets"
 	cliperr "github.com/pastelocal/pastelocal/internal/errors"
 	"github.com/pastelocal/pastelocal/internal/proto"
+	"github.com/pastelocal/pastelocal/internal/snippets"
 )
 
 // handleSnippets handles GET /snippets and POST /snippets.
