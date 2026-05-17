@@ -10,7 +10,7 @@ PasteLocal lets you access your local clipboard (including screenshots) from any
 
 ## Why PasteLocal?
 
-When you SSH into a remote machine (a VPS, server, or cloud instance), your local clipboard becomes unreachable. You take a screenshot or copy important text on your laptop, switch to your terminal, and suddenly you can't paste it into Claude, Cursor, or any other agentic coding tool running on the remote.
+When you SSH into a remote machine (a VPS, server, or cloud instance), your local clipboard becomes unreachable. You take a screenshot or copy important text on your laptop, switch to your terminal, and suddenly you can't paste it into your agentic coding tool (Claude, Cursor, etc.) running on the remote.
 
 This friction is especially painful for developers who rely on AI coding assistants over SSH.
 
@@ -106,7 +106,7 @@ pastelocal-remote
 
 ### Using with Agentic Coding Tools
 
-The easiest way to use PasteLocal inside tools like Claude, Cursor, or Windsurf is to add a custom command/skill.
+The easiest way to use PasteLocal inside tools like Claude, Cursor, Windsurf, and others is to add a custom command/skill.
 
 **Recommended prompt to add:**
 
@@ -241,7 +241,7 @@ That said, we have a bigger vision for what this experience could become.
 
 The ideal workflow would feel almost native: paste an image directly in your SSH client (like Termius), have it automatically uploaded to the remote machine with a progress bar, and have the path instantly available in your agentic coding tool.
 
-We see PasteLocal as the foundation for deeper, more seamless integrations with terminals, SSH clients, and AI coding environments. If you're interested in helping push toward that future, we'd love to hear from you.
+We see PasteLocal as the foundation for deeper, more seamless integrations with terminals, SSH clients, and agentic coding environments. If you're interested in helping push toward that future, we'd love to hear from you.
 
 ---
 
