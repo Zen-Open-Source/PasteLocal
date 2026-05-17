@@ -10,34 +10,41 @@ PasteLocal lets you access your local clipboard (including screenshots) from any
 
 ## Why PasteLocal?
 
-When you SSH into a server, your local clipboard disappears. You take a screenshot or copy some text, switch to the remote shell, and suddenly you can't paste it.
+When you SSH into a remote machine (a VPS, server, or cloud instance), your local clipboard becomes unreachable. You take a screenshot or copy important text on your laptop, switch to your terminal, and suddenly you can't paste it into Claude, Cursor, or any other agentic coding tool running on the remote.
 
-PasteLocal solves this elegantly:
+This friction is especially painful for developers who rely on AI coding assistants over SSH.
 
-- Works over your existing SSH connection (no new ports or services exposed)
+**PasteLocal solves this cleanly:**
+
+- Works over your existing SSH connection — no new ports or services exposed
 - Extremely simple remote command (`pastelocal-remote`)
-- Excellent integration with agentic coding tools via skills
-- History, named snippets, and more
+- Excellent integration with agentic coding tools via skills (`/paste`, `/paste-history`, etc.)
+- Built-in clipboard history and named snippets
+- Works with popular SSH clients like Termius
+
+It’s the most reliable way today to bring your local clipboard into remote development environments.
 
 ---
 
 ## 60-Second Quick Start
 
 ```bash
-# 1. Install (or build from source)
+# 1. Install the CLI (recommended)
 go install github.com/Zen-Open-Source/PasteLocal/cmd/pastelocal@latest
 
-# 2. Initialize everything
+# 2. Set up the local daemon and generate a secure token
 pastelocal init
 
-# 3. Add a remote host (automatically edits your SSH config)
+# 3. Add your remote server (this edits your SSH config and installs the remote helper)
 pastelocal add-host myserver
 
-# 4. SSH into the server and run:
+# 4. SSH into the server and pull your local clipboard
 pastelocal-remote
 ```
 
-That's it. `pastelocal-remote` will print a file path. Your agentic coding tool (or any tool) can read the image directly from that path.
+`pastelocal-remote` will save the latest clipboard content (including screenshots) to a file on the remote machine and print the path.
+
+You can then use the `/paste` skill (or just read the file) inside your agentic coding tool.
 
 ---
 
@@ -83,7 +90,7 @@ make build
 
 Binaries will be in the `bin/` directory.
 
-> **Note:** The Go module path is currently being aligned with the new repository location. Building from source is the most reliable method until the first stable release.
+> **Note for v0.1.0:** The recommended `go install` command above may not work yet because the Go module path is still being migrated. For the most reliable experience, we recommend cloning the repo and running `make build` instead.
 
 ---
 
@@ -99,12 +106,24 @@ pastelocal-remote
 
 ### Using with Agentic Coding Tools
 
-Add this to your agentic coding tool (Claude, Cursor, Windsurf, etc.) or global commands:
+The easiest way to use PasteLocal inside tools like Claude, Cursor, or Windsurf is to add a custom command/skill.
+
+**Recommended prompt to add:**
 
 ```markdown
-Run `pastelocal-remote` on the remote host. It will print a file path.
-Use the Read tool on that path to get the clipboard content.
+You have access to the user's local clipboard via PasteLocal.
+
+To retrieve the latest clipboard content (including screenshots):
+
+1. Run the command `pastelocal-remote` in the terminal on this remote machine.
+2. It will output a file path (e.g. `~/.cache/pastelocal/pastelocal-xxx.png`).
+3. Use your Read tool on that exact file path.
+4. After reading the file, run `rm <path>` to clean it up.
+
+Confirm to the user once you've received the clipboard content.
 ```
+
+This works reliably with most agentic coding tools.
 
 ### Clipboard History
 
@@ -154,7 +173,7 @@ PasteLocal has an **experimental** relay system that allows clipboard sharing be
 ```
 Your Laptop                     Remote Server
 ┌──────────────┐               ┌─────────────────────┐
-│ Local        │               │  Claude / Terminal  │
+│ Local        │               │ Agentic Coding Tool │
 │ Clipboard    │◄── SSH ───────│  pastelocal-remote  │
 │              │   tunnel      │                     │
 │ pastelocald  │               └─────────────────────┘
