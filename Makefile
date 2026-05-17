@@ -6,6 +6,8 @@ GO = go
 GOFLAGS = -trimpath
 
 build:
+	@rm -rf bin/
+	@mkdir -p bin
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal ./cmd/pastelocal
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocald ./cmd/pastelocald
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/pastelocal-remote ./cmd/pastelocal-remote
