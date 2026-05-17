@@ -111,8 +111,8 @@ dockers:
     build_flag_templates:
       - "--platform=linux/amd64"
     image_templates:
-      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-amd64"
-      - "ghcr.io/pastelocal/pastelocal-remote:latest-amd64"
+      - "ghcr.io/zen-open-source/pastelocal-remote:{{ .Version }}-amd64"
+      - "ghcr.io/zen-open-source/pastelocal-remote:latest-amd64"
     goos: linux
     goarch: amd64
 
@@ -123,17 +123,17 @@ dockers:
     build_flag_templates:
       - "--platform=linux/arm64"
     image_templates:
-      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-arm64"
-      - "ghcr.io/pastelocal/pastelocal-remote:latest-arm64"
+      - "ghcr.io/zen-open-source/pastelocal-remote:{{ .Version }}-arm64"
+      - "ghcr.io/zen-open-source/pastelocal-remote:latest-arm64"
     goos: linux
     goarch: arm64
 
 docker_manifests:
   - id: remote-manifest
-    name_template: "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}"
+    name_template: "ghcr.io/zen-open-source/pastelocal-remote:{{ .Version }}"
     image_templates:
-      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-amd64"
-      - "ghcr.io/pastelocal/pastelocal-remote:{{ .Version }}-arm64"
+      - "ghcr.io/zen-open-source/pastelocal-remote:{{ .Version }}-amd64"
+      - "ghcr.io/zen-open-source/pastelocal-remote:{{ .Version }}-arm64"
 
 nfpms:
   - id: remote
@@ -141,7 +141,7 @@ nfpms:
       - pastelocal-remote
     package_name: pastelocal-remote
     vendor: pastelocal
-    homepage: https://github.com/pastelocal/pastelocal
+    homepage: https://github.com/Zen-Open-Source/PasteLocal
     maintainer: pastelocal contributors
     description: Remote helper for pastelocal clipboard bridge
     license: MIT
@@ -156,18 +156,18 @@ nfpms:
 
 release:
   github:
-    owner: pastelocal
-    name: pastelocal
+    owner: Zen-Open-Source
+    name: PasteLocal
   mode: replace
 
 brews:
   - name: pastelocal
     repository:
-      owner: pastelocal
+      owner: Zen-Open-Source
       name: tap
       branch: main
     directory: Formula
-    homepage: https://github.com/pastelocal/pastelocal
+    homepage: https://github.com/Zen-Open-Source/PasteLocal
     description: Clipboard bridge for Claude Code over SSH
     license: MIT
     install: |
