@@ -160,6 +160,9 @@ release:
     name: PasteLocal
   mode: replace
 
+# Homebrew tap configuration
+# We publish under the Zen-Open-Source organization for consistency
+# with other open source projects released under this org.
 brews:
   - name: pastelocal
     repository:
