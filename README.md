@@ -210,7 +210,14 @@ Contributions are very welcome!
 - Check the [Architecture](docs/ARCHITECTURE.md) document
 - Open an issue or pull request
 
-We especially welcome improvements to the relay feature and better Claude skill examples.
+We especially welcome improvements to the relay feature and better agentic coding tool integrations.
+
+---
+
+## Acknowledgments
+
+This project was developed with significant assistance from **Grok Build** (xAI).  
+Grok helped with architecture decisions, code reviews, documentation, release configuration, and polishing the project for public launch.
 
 ---
 
