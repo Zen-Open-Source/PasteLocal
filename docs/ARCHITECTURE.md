@@ -60,8 +60,8 @@ The user-facing command-line tool built with Cobra. Subcommands:
 
 ### 4. Skill (`paste.md`)
 
-A Claude skill installed at `~/.claude/commands/paste.md` on the remote host.
-It instructs Claude to:
+A skill installed at `~/.claude/commands/paste.md` on the remote host (works with Claude and other agentic coding tools).
+It instructs the tool to:
 1. Run `pastelocal-remote` via Bash
 2. Read the resulting image file
 3. Delete the file
@@ -121,7 +121,7 @@ The relay feature is under active development. The core SSH-based workflow remai
 │                └────────────┘                             │
 │                                                          │
 │  ┌──────────────────────────────────────┐                │
-│  │ Claude / other tools (trust level:   │                │
+│  │ Agentic coding tools (trust level:   │                │
 │  │ you chose to run them)              │                │
 │  └──────────────────────────────────────┘                │
 └───────────────────────────────────────────────────────────┘
@@ -201,13 +201,13 @@ Authorization: Bearer <token>
 ## Data Flow: `/paste` Operation
 
 ```
-User types /paste in Claude on remote host
+User types /paste in their agentic coding tool on the remote host
          │
          ▼
-Claude reads ~/.claude/commands/paste.md
+The tool reads ~/.claude/commands/paste.md
          │
          ▼
-Claude runs: pastelocal-remote
+The tool runs: pastelocal-remote
          │
          ▼
 pastelocal-remote reads token from ~/.config/pastelocal/token
@@ -235,13 +235,13 @@ pastelocal-remote receives JSON response
          └─ print absolute path to stdout
          │
          ▼
-Claude reads the image file via Read tool
+The tool reads the image file via its Read tool
          │
          ▼
-Claude deletes the file via rm
+The tool deletes the file via rm
          │
          ▼
-Claude confirms: "Got it, image attached."
+The tool confirms: "Got it, image attached."
 ```
 
 ---

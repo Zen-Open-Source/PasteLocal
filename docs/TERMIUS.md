@@ -70,8 +70,8 @@ Then run: pastelocal add-host myserver --finish
 pastelocal add-host myserver --finish
 ```
 
-This copies the `pastelocal-remote` binary, the auth token, and the Claude
-skill file to the remote host via SCP. It skips the SSH config edit (since
+This copies the `pastelocal-remote` binary, the auth token, and the skill
+file to the remote host via SCP. It skips the SSH config edit (since
 Termius handles that part).
 
 ### Step 5: Connect and test
