@@ -200,6 +200,31 @@ Snippets are stored in `~/.local/share/pastelocal/snippets/` as JSON files with:
 
 ---
 
+## Experimental: Multi-Device Relay
+
+PasteLocal includes experimental support for end-to-end encrypted clipboard sharing between multiple devices **without** requiring SSH tunnels.
+
+**Current Status:** Experimental / Preview
+
+### What Currently Works
+- Device keypair generation and registration (`pastelocal relay init` + `pair`)
+- Peer management (`pastelocal relay add-peer`, `devices`)
+- Receiving clipboard content via `pastelocal-remote --relay <url>`
+- Proper E2E encryption using X25519 + AES-GCM
+
+### What Is Still In Progress
+- Reliable sending from the local daemon (auto-upload)
+- Background polling / notifications on the receiving side
+- Persistence (the relay server is currently in-memory only)
+- Full integration with the TUI and `pastelocal doctor`
+
+### When to Use It
+Only use the relay for testing and non-critical workflows. The core SSH-based clipboard bridge (`pastelocal add-host` + `pastelocal-remote`) remains the recommended, stable experience.
+
+We are actively working on completing the relay feature. Feedback and contributions are welcome.
+
+---
+
 ## Troubleshooting (Top 10)
 
 | # | Symptom | Error Code | Fix |
