@@ -7,7 +7,7 @@ take a screenshot, switch to the remote shell, and realize you can't paste it.
 pastelocal bridges that gap: a tiny daemon on your laptop serves clipboard
 images over loopback, and an SSH `RemoteForward` tunnel carries them to the
 remote host where `pastelocal-remote` writes them to disk — ready for any
-tool (Claude, GPT, etc.) to read.
+agentic coding tool to read.
 
 ---
 
@@ -103,8 +103,8 @@ screenshots.
 │                  └───────────────┘  │
 │                                     │
 │  ┌───────────────────────────────┐  │
-│  │ Claude skill: /paste          │  │
-│  │ (~/.claude/commands/paste.md) │  │
+│  │ Skill: /paste                   │  │
+│  │ (~/.claude/commands/paste.md)   │  │
 │  └───────────────────────────────┘  │
 └─────────────────────────────────────┘
 ```
@@ -142,7 +142,7 @@ pastelocal-remote --list
 # Fetch a specific entry by index (1 = most recent)
 pastelocal-remote --list --index 2
 
-# Claude skill
+# Skill
 /paste-history
 ```
 
@@ -184,7 +184,7 @@ On the remote host:
 pastelocal-remote --snippet api-key
 ```
 
-### Claude Skill
+### Skill
 
 ```
 /paste-snippet api-key
@@ -283,7 +283,7 @@ Uninstall will:
 | Diagnostic doctor command | ✅ | ❌ | ❌ | ❌ |
 | macOS Keychain / Linux libsecret | ✅ | ❌ | ❌ | ❌ |
 | launchd / systemd service | ✅ | ❌ | ❌ | ❌ |
-| Claude skill integration | ✅ | ❌ | ✅ | ✅ |
+| Agentic coding tool skill integration | ✅ | ❌ | ✅ | ✅ |
 | Token never in argv/environ | ✅ | ❌ | ❌ | ❌ |
 | Protocol version negotiation | ✅ | ❌ | ❌ | ❌ |
 
