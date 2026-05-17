@@ -1,129 +1,223 @@
 # pastelocal
 
-**Your clipboard, everywhere.**
+![Header](assets/pastelocal-header.png)
 
-Secure, fast clipboard sharing between your local machine and remote hosts over SSH — built for developers who live in the terminal and use tools like Claude.
+**Secure clipboard sharing over SSH for remote work and AI tools like Claude.**
+
+PasteLocal lets you access your local clipboard (including screenshots) from any remote machine over SSH — with zero friction. Built for developers who live in the terminal and use tools like Claude, Cursor, or custom AI agents.
 
 ---
 
-## 30-Second Start
+## Why PasteLocal?
+
+When you SSH into a server, your local clipboard disappears. You take a screenshot or copy some text, switch to the remote shell, and suddenly you can't paste it.
+
+PasteLocal solves this elegantly:
+
+- Works over your existing SSH connection (no new ports or services exposed)
+- Extremely simple remote command (`pastelocal-remote`)
+- Excellent Claude / AI coding assistant integration via skills
+- History, named snippets, and more
+
+---
+
+## 60-Second Quick Start
 
 ```bash
-# 1. Install
-go install github.com/pastelocal/pastelocal/cmd/pastelocal@latest
+# 1. Install (or build from source)
+go install github.com/Zen-Open-Source/PasteLocal/cmd/pastelocal@latest
 
-# 2. Initialize (generates token, installs daemon)
+# 2. Initialize everything
 pastelocal init
 
-# 3. Add a remote host
+# 3. Add a remote host (automatically edits your SSH config)
 pastelocal add-host myserver
 
-# 4. On the remote, just run:
+# 4. SSH into the server and run:
 pastelocal-remote
 ```
 
-PasteLocal copies your local clipboard (including screenshots) to any remote machine via an encrypted SSH tunnel. Works great with Claude, Cursor, and any terminal-based workflow.
+That's it. `pastelocal-remote` will print a file path. Claude (or any tool) can read the image directly from that path.
 
 ---
 
 ## Features
 
-- **One-command remote clipboard** — `pastelocal-remote` just works over any SSH connection
-- **Claude skills** — `/paste`, `/paste-history`, `/paste-snippet`, `/paste-send`
-- **Clipboard history** — Go back to previous copies with `--list` and `--index`
-- **Named snippets** — Save and recall frequently used text or images
-- **TUI dashboard** — `pastelocal` shows daemon status, hosts, and recent activity
-- **Doctor + auto-fix** — `pastelocal doctor --fix` diagnoses and repairs most issues
-- **Termius support** — Works with Termius and other SSH clients
-- **Experimental: Multi-device relay** — E2E encrypted clipboard sync between machines without SSH tunnels (see below)
+### Core Workflow
+- One-command remote clipboard access via SSH tunnel
+- Full support for images (screenshots) and text
+- Works with any SSH client (including Termius)
 
----
+### Claude & AI Integration
+- `/paste` — Paste current clipboard
+- `/paste-history` — Choose from recent clipboard entries
+- `/paste-snippet` — Recall saved named snippets
+- `/paste-send` — Send files from the remote machine back to your local clipboard
 
-## Experimental: Relay Mode
+### Productivity Tools
+- **Clipboard History** — Go back in time with `pastelocal-remote --list`
+- **Named Snippets** — Save frequently used text or images locally
+- **TUI Dashboard** — Run `pastelocal` to see daemon status, hosts, and recent activity
+- **Doctor** — `pastelocal doctor --fix` automatically diagnoses and repairs most issues
 
-PasteLocal includes an experimental relay server for clipboard sharing between multiple devices without requiring persistent SSH tunnels.
-
-**Status:** Experimental / Preview
-
-- Device pairing with X25519 + AES-GCM end-to-end encryption
-- Works today for receiving clipboard content from paired peers
-- Send path and full daemon integration are still in progress
-
-Use at your own risk. The core SSH path is the recommended, production-ready experience.
+### Experimental
+- **Multi-device Relay** — E2E encrypted clipboard sync without SSH tunnels (see below)
 
 ---
 
 ## Installation
 
-### From source (recommended for now)
+### Recommended: Go Install
 
 ```bash
-go install github.com/pastelocal/pastelocal/cmd/pastelocal@latest
+go install github.com/Zen-Open-Source/PasteLocal/cmd/pastelocal@latest
 ```
 
-### Build from source
+### Build from Source
 
 ```bash
-git clone https://github.com/pastelocal/pastelocal.git
-cd pastelocal
+git clone https://github.com/Zen-Open-Source/PasteLocal.git
+cd PasteLocal
 make build
 ```
 
 Binaries will be in the `bin/` directory.
+
+> **Note:** The Go module path is currently being aligned with the new repository location. Building from source is the most reliable method until the first stable release.
+
+---
+
+## Usage Examples
+
+### Basic Remote Clipboard
+
+```bash
+# On your remote server
+pastelocal-remote
+# → /home/user/.cache/pastelocal/pastelocal-abc123.png
+```
+
+### Using with Claude
+
+Add this to your Claude project or global commands:
+
+```markdown
+Run `pastelocal-remote` on the remote host. It will print a file path.
+Use the Read tool on that path to get the clipboard content.
+```
+
+### Clipboard History
+
+```bash
+pastelocal-remote --list
+pastelocal-remote --list --index 3
+```
+
+### Named Snippets
+
+On your local machine:
+
+```bash
+pastelocal snippets save api-key
+pastelocal snippets save deploy-script --description "Common deploy command"
+```
+
+On the remote:
+
+```bash
+pastelocal-remote --snippet api-key
+```
+
+---
+
+## Experimental: Multi-Device Relay
+
+PasteLocal has an **experimental** relay system that allows clipboard sharing between multiple devices without requiring direct SSH tunnels.
+
+**Current Status:** Experimental / Preview
+
+**What works today:**
+- Device pairing with end-to-end encryption (X25519 + AES-GCM)
+- Receiving clipboard content from paired peers via `pastelocal-remote --relay`
+
+**What is still in progress:**
+- Reliable sending from the local daemon
+- Background notifications
+- Persistence across relay restarts
+
+**Recommendation:** Use the SSH-based workflow for daily work. The relay is intended for testing and specific multi-machine setups.
 
 ---
 
 ## How It Works
 
 ```
-Local Machine                  Remote Host
-┌──────────────┐              ┌────────────────────┐
-│  Your OS     │              │  Claude / Terminal │
-│  Clipboard   │◄── SSH ──────│  pastelocal-remote │
-│              │   tunnel     │                    │
-│ pastelocald  │              │  ~/.cache/pastelocal/│
-│  :7331       │              └────────────────────┘
+Your Laptop                     Remote Server
+┌──────────────┐               ┌─────────────────────┐
+│ Local        │               │  Claude / Terminal  │
+│ Clipboard    │◄── SSH ───────│  pastelocal-remote  │
+│              │   tunnel      │                     │
+│ pastelocald  │               └─────────────────────┘
+│ :7331        │
 └──────────────┘
 ```
 
-The daemon only listens on loopback. All traffic travels over your existing encrypted SSH connection.
+Everything travels over your existing encrypted SSH connection. No new ports are opened.
 
 ---
 
-## Documentation
+## Configuration
 
-- [Full Documentation](docs/README.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Security Model](docs/SECURITY.md)
+Configuration lives at `~/.config/pastelocal/config.toml`.
+
+Key options:
+
+```toml
+[history]
+enabled = true
+size = 20
+ttl_seconds = 3600
+
+[relay]
+enabled = false                    # Experimental
+relay_url = "http://localhost:7332"
+auto_upload = false
+```
+
+Run `pastelocal` (the TUI) or `pastelocal doctor` to inspect your setup.
+
+---
+
+## Troubleshooting
+
+Run this first:
+
+```bash
+pastelocal doctor --fix
+```
+
+Common issues and fixes are documented in the full docs:
+- [Troubleshooting](docs/README.md#troubleshooting-top-10)
 - [Error Codes](docs/ERROR_CODES.md)
-- [Termius Setup](docs/TERMIUS.md)
-
----
-
-## Status
-
-PasteLocal is actively used in production by the author for daily remote work with Claude.
-
-The core SSH clipboard bridge is stable. History, snippets, and the TUI are solid. The multi-device relay is experimental and under active development.
 
 ---
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and how to submit changes.
+Contributions are very welcome!
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md)
+- Check the [Architecture](docs/ARCHITECTURE.md) document
+- Open an issue or pull request
+
+We especially welcome improvements to the relay feature and better Claude skill examples.
 
 ---
 
 ## License
 
-MIT © pastelocal contributors
+MIT © Zen Open Source contributors
 
 ---
 
-## Acknowledgments
-
-Built out of frustration with constantly switching between local screenshots and remote terminals. Special thanks to everyone who has dealt with "I can't paste this here."
-
----
-
-*Clipboard infrastructure for people who ssh.*
+*Built out of frustration with constantly switching between local screenshots and remote terminals.*
