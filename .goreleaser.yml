@@ -165,7 +165,7 @@ brews:
       branch: main
     directory: Formula
     homepage: https://github.com/Zen-Open-Source/PasteLocal
-    description: Clipboard bridge for Claude Code over SSH
+    description: Clipboard bridge for agentic coding tools over SSH
     license: MIT
     install: |
       bin.install "pastelocal"

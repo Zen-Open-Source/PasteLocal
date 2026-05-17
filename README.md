@@ -2,9 +2,9 @@
 
 ![Header](assets/pastelocal-header.png)
 
-**Secure clipboard sharing over SSH for remote work and AI tools like Claude.**
+**Secure clipboard sharing over SSH for remote work and agentic coding tools.**
 
-PasteLocal lets you access your local clipboard (including screenshots) from any remote machine over SSH — with zero friction. Built for developers who live in the terminal and use tools like Claude, Cursor, or custom AI agents.
+PasteLocal lets you access your local clipboard (including screenshots) from any remote machine over SSH — with zero friction. Built for developers who live in the terminal and use agentic coding tools.
 
 ---
 
@@ -16,7 +16,7 @@ PasteLocal solves this elegantly:
 
 - Works over your existing SSH connection (no new ports or services exposed)
 - Extremely simple remote command (`pastelocal-remote`)
-- Excellent Claude / AI coding assistant integration via skills
+- Excellent integration with agentic coding tools via skills
 - History, named snippets, and more
 
 ---
@@ -37,7 +37,7 @@ pastelocal add-host myserver
 pastelocal-remote
 ```
 
-That's it. `pastelocal-remote` will print a file path. Claude (or any tool) can read the image directly from that path.
+That's it. `pastelocal-remote` will print a file path. Your agentic coding tool (or any tool) can read the image directly from that path.
 
 ---
 
@@ -48,7 +48,7 @@ That's it. `pastelocal-remote` will print a file path. Claude (or any tool) can 
 - Full support for images (screenshots) and text
 - Works with any SSH client (including Termius)
 
-### Claude & AI Integration
+### Integration with Agentic Coding Tools
 - `/paste` — Paste current clipboard
 - `/paste-history` — Choose from recent clipboard entries
 - `/paste-snippet` — Recall saved named snippets
@@ -97,9 +97,9 @@ pastelocal-remote
 # → /home/user/.cache/pastelocal/pastelocal-abc123.png
 ```
 
-### Using with Claude
+### Using with Agentic Coding Tools
 
-Add this to your Claude project or global commands:
+Add this to your agentic coding tool (Claude, Cursor, Windsurf, etc.) or global commands:
 
 ```markdown
 Run `pastelocal-remote` on the remote host. It will print a file path.
