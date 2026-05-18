@@ -1,0 +1,100 @@
+# PasteLocal Relay v1.0 — Multi-Device Encrypted Clipboard
+
+The relay turns PasteLocal into a true multi-device clipboard bus. Your laptop, remote dev boxes, cloud VMs, and agents can share clipboard (text + screenshots) end-to-end encrypted without needing direct SSH tunnels between every pair.
+
+## Quick Start (Laptop + 1 Remote)
+
+1. On **laptop** (and every device):
+   ```bash
+   pastelocal relay init
+   pastelocal relay pair https://your-relay.example.com   # or http://localhost:7332 for testing
+   ```
+
+2. Exchange fingerprints (shown by `pair` and `devices`).
+
+3. On **both** sides add each other:
+   ```bash
+   pastelocal relay add-peer <other-fingerprint-or-device-id>
+   ```
+
+4. On laptop: take a screenshot or copy text.
+
+5. On remote:
+   ```bash
+   pastelocal-remote --relay https://your-relay.example.com
+   # prints path to the received file (auto-cleaned by skills)
+   ```
+
+Or inside an agent:
+   - Grok: `/paste` (uses the packaged skill)
+   - Claude: `/paste` (existing skill)
+
+## Auto-Sync (Magic Path)
+
+Edit `~/.config/pastelocal/config.toml`:
+
+```toml
+[relay]
+enabled = true
+relay_url = "https://..."
+auto_upload = true   # push on every meaningful clipboard change
+upload_ttl = 300
+```
+
+Run (or restart) `pastelocald`.
+
+Now clipboard changes on the laptop appear on all paired remotes within a few seconds (watcher + per-peer E2EE upload).
+
+## Commands
+
+- `pastelocal relay init` — create X25519 device keypair (0600)
+- `pastelocal relay pair <url>` — register, get token, print fingerprint
+- `pastelocal relay devices` — list everyone on the relay
+- `pastelocal relay add-peer <id>` — enable E2E sharing with a peer (run on both)
+- `pastelocal relay send <peer> [--file path]` — manual push (clipboard or file)
+- `pastelocal relay inbox` — list what others have sent you
+- `pastelocal relay fetch <sender>` — retrieve + decrypt one item (writes temp file)
+- `pastelocal relay status` — health + peer count
+- `pastelocal-remote --relay <url> --send /path --peer <id>` — send from remote to any peer
+- `pastelocal-remote --relay <url>` — receive latest from any peer
+
+## Running Your Own Relay Server
+
+```bash
+# In-memory (dev)
+go run ./cmd/relay-server --port 7332
+
+# With persistence (recommended)
+go run ./cmd/relay-server --port 7332 --state-dir ~/.config/pastelocal/relay-state
+# or install as systemd/launchd service (see docs)
+```
+
+The server never sees plaintext. All blobs are encrypted with per-pair X25519+HKDF+AES-GCM before they arrive.
+
+## Grok Skills
+
+The `skill/grok/` directory contains first-class Grok `SKILL.md` files:
+
+```bash
+cp -r skill/grok/paste ~/.grok/skills/pastelocal-paste
+cp -r skill/grok/paste-send ~/.grok/skills/pastelocal-paste-send
+```
+
+Then just type `/paste` or `/paste-send` in any Grok session on a remote. The skills prefer the zero-config SSH tunnel when available and fall back to `--relay` automatically when needed.
+
+A future `pastelocal relay grok-setup` will automate the copy + instructions.
+
+## Security Notes (v1)
+
+- Only the owner of a device can read its own inbox (token + server check).
+- Rate limiting and TTL + compaction are enforced.
+- Device private keys and relay tokens are 0600.
+- Fingerprint (first 16 hex chars of device ID) is safe to share for manual verification.
+
+See [SECURITY.md](./SECURITY.md) for full threat model.
+
+## Status
+
+Relay v1.0 completes the "Future Vision" section of the README. The core SSH path remains the recommended fast path; relay is the perfect fallback / multi-device / no-tunnel solution.
+
+Bugs / feedback: open an issue or PR.

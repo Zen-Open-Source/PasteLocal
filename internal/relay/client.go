@@ -396,3 +396,102 @@ func (c *Client) FetchFromInbox(senderDeviceID string) (*DownloadResponse, error
 	}
 	return &downloadResp, nil
 }
+
+// --- Peer upload and listing additions for v1 relay (enables per-peer E2E inbox delivery) ---
+
+// ListPeersResponse is the response for GET /api/v1/peers (my peers).
+type ListPeersResponse struct {
+	OK    bool         `json:"ok"`
+	Peers []DeviceInfo `json:"peers,omitempty"`
+	Error string       `json:"error,omitempty"`
+}
+
+// ListPeers lists the peers that have been added for this device (with their pubkeys).
+func (c *Client) ListPeers() (*ListPeersResponse, error) {
+	req, err := http.NewRequest("GET", c.relayURL+"/api/v1/peers", nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing peers: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay server error: status %d", resp.StatusCode)
+	}
+
+	var listResp ListPeersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return &listResp, nil
+}
+
+// UploadTo uploads an already-encrypted blob to a specific receiver's inbox.
+func (c *Client) UploadTo(receiverDeviceID, format string, encryptedData, nonce []byte, ttl int) (*UploadResponse, error) {
+	payload := UploadPayload{
+		DeviceID:  string(c.deviceID),
+		Format:    format,
+		Data:      base64.StdEncoding.EncodeToString(encryptedData),
+		Nonce:     base64.StdEncoding.EncodeToString(nonce),
+		Timestamp: time.Now().Unix(),
+		TTL:       ttl,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling payload: %w", err)
+	}
+
+	url := c.relayURL + "/api/v1/upload/" + receiverDeviceID
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("uploading to relay inbox: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay server error: status %d", resp.StatusCode)
+	}
+
+	var uploadResp UploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&uploadResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	if !uploadResp.OK {
+		return &uploadResp, fmt.Errorf("upload to peer failed: %s", uploadResp.Error)
+	}
+	return &uploadResp, nil
+}
+
+// EncryptAndUploadTo encrypts data for the given peer pubkey and uploads to that receiver's inbox.
+func (c *Client) EncryptAndUploadTo(peerPublicKey *ecdh.PublicKey, receiverDeviceID, format string, data []byte, ttl int) (*UploadResponse, error) {
+	sharedSecret, err := c.keyPair.SharedSecret(peerPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("computing shared secret: %w", err)
+	}
+	nonce, err := crypto.GenerateNonce()
+	if err != nil {
+		return nil, fmt.Errorf("generating nonce: %w", err)
+	}
+	encryptedData, err := crypto.Encrypt(data, sharedSecret, nonce)
+	if err != nil {
+		return nil, fmt.Errorf("encrypting data: %w", err)
+	}
+	return c.UploadTo(receiverDeviceID, format, encryptedData, nonce, ttl)
+}

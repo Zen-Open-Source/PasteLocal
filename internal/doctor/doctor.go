@@ -44,6 +44,10 @@ func RunChecks(cfg *config.Config, fix bool) []CheckResult {
 	results = append(results, checkDaemonHTTP(cfg))
 	results = append(results, checkLoopbackOnly(cfg))
 	results = append(results, checkTokenFile(cfg))
+	if cfg.Relay.Enabled {
+		results = append(results, checkRelayDeviceKey())
+		results = append(results, checkRelayToken())
+	}
 	results = append(results, checkKeychainEntry(cfg))
 	results = append(results, checkClipboardTool(cfg))
 
@@ -61,6 +65,10 @@ func RunChecks(cfg *config.Config, fix bool) []CheckResult {
 		results = append(results, checkDaemonHTTP(cfg))
 		results = append(results, checkLoopbackOnly(cfg))
 		results = append(results, checkTokenFile(cfg))
+		if cfg.Relay.Enabled {
+			results = append(results, checkRelayDeviceKey())
+			results = append(results, checkRelayToken())
+		}
 		results = append(results, checkKeychainEntry(cfg))
 		results = append(results, checkClipboardTool(cfg))
 		for alias := range cfg.Hosts {

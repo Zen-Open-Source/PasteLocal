@@ -440,5 +440,10 @@ func (s *Server) startClipboardWatcher() {
 			CapturedAt: now.Format(time.RFC3339),
 			Format:     content.Format,
 		})
+
+		// Also push to relay peers (if configured). Non-blocking inside.
+		if s.relayClient != nil && s.cfg.Relay.AutoUpload {
+			go s.pushToRelayPeers(content.Format, content.Data)
+		}
 	}
 }

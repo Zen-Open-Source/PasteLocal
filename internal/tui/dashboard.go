@@ -253,6 +253,11 @@ func (m Model) View() string {
 	b.WriteString(renderBox(watchInner, m.width, boxSt))
 	b.WriteString("\n")
 
+	// Relay status (v1)
+	relayInner := fieldStyle.Render("Relay (E2E multi-device): ") + mutedStyle.Render("see `pastelocal relay status` (enable in [relay] section of config)")
+	b.WriteString(renderBox(relayInner, m.width, boxSt))
+	b.WriteString("\n")
+
 	// Hosts box (symbols for quick ok/unreachable scan; termius noted subtly).
 	if len(m.hosts) > 0 {
 		var hostLines []string

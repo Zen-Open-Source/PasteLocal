@@ -4,68 +4,49 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/pastelocal/pastelocal/internal/relay"
 )
 
-// Blob represents an encrypted clipboard payload.
-type Blob struct {
-	ID        string    `json:"id"`
-	DeviceID  string    `json:"device_id"`
-	Format    string    `json:"format"`
-	Data      string    `json:"data"`      // base64 encrypted
-	Nonce     string    `json:"nonce"`     // base64 nonce
-	Timestamp time.Time `json:"timestamp"`
-	TTL       int       `json:"ttl"`       // seconds
-}
-
-// Device represents a registered device.
-type Device struct {
-	DeviceID    string    `json:"device_id"`
-	PublicKey   string    `json:"public_key"`
-	Fingerprint string    `json:"fingerprint"`
-	Token       string    `json:"token"`
-	LastSeen    time.Time `json:"last_seen"`
-}
-
-// Peer represents a peer relationship.
-type Peer struct {
-	DeviceID    string `json:"device_id"`
-	PeerDeviceID string `json:"peer_device_id"`
-}
-
-// Server is the relay server.
+// Server is the relay server. All data is delegated to the RelayStore
+// (which may be file-backed for persistence or in-memory).
 type Server struct {
-	mu       sync.RWMutex
-	blobs    map[string]*Blob       // blob ID -> blob
-	devices  map[string]*Device     // device ID -> device
-	peers    map[string][]string    // device ID -> peer device IDs
-	tokens   map[string]string      // token -> device ID
-	blobIdx  map[string]string      // device ID -> latest blob ID (legacy)
-	inbox    map[string]map[string]string // receiver -> (sender -> blob ID)
+	mu    sync.RWMutex
+	store *relay.RelayStore
 }
 
 func main() {
-	port := "7332"
+	port := flag.String("port", "7332", "listen port")
+	stateDir := flag.String("state-dir", "", "persist state dir (writes state.json); empty = in-memory only")
+	flag.Parse()
+
 	if envPort := os.Getenv("PORT"); envPort != "" {
-		port = envPort
+		*port = envPort
+	}
+
+	persistPath := ""
+	if *stateDir != "" {
+		persistPath = filepath.Join(expandHome(*stateDir), "state.json")
+	}
+	st, err := relay.NewStore(persistPath)
+	if err != nil {
+		log.Fatalf("failed to init relay store: %v", err)
 	}
 
 	s := &Server{
-		blobs:   make(map[string]*Blob),
-		devices: make(map[string]*Device),
-		peers:   make(map[string][]string),
-		tokens:  make(map[string]string),
-		blobIdx: make(map[string]string),
-		inbox:   make(map[string]map[string]string),
+		store: st,
 	}
 
-	// Start cleanup goroutine.
+	// Start cleanup goroutine (also compacts persisted state).
 	go s.cleanupExpiredBlobs()
 
 	mux := http.NewServeMux()
@@ -79,9 +60,24 @@ func main() {
 	mux.HandleFunc("/api/v1/inbox/", s.handleInboxFetch) // /api/v1/inbox/{sender}
 	mux.HandleFunc("/health", s.handleHealth)
 
-	addr := ":" + port
-	log.Printf("relay-server listening on %s", addr)
+	addr := ":" + *port
+	log.Printf("relay-server listening on %s (persist: %s)", addr, persistPath)
+	if persistPath != "" {
+		log.Printf("  state file: %s", persistPath)
+	}
 	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+// expandHome replaces a leading ~ with the user's home directory (for state-dir).
+func expandHome(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[1:])
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -109,18 +105,21 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	// Check if device already exists.
-	if _, exists := s.devices[req.DeviceID]; exists {
+	if _, exists := s.store.Devices[req.DeviceID]; exists {
 		// Update last seen.
-		s.devices[req.DeviceID].LastSeen = time.Now()
-		token := s.devices[req.DeviceID].Token
+		s.store.Devices[req.DeviceID].LastSeen = time.Now()
+		token := s.store.Devices[req.DeviceID].Token
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "token": token})
+		if err := s.store.Save(); err != nil {
+			log.Printf("relay persist save: %v", err)
+		}
 		return
 	}
 
 	// Generate token.
 	token := generateToken()
 
-	device := &Device{
+	device := &relay.Device{
 		DeviceID:    req.DeviceID,
 		PublicKey:   req.PublicKey,
 		Fingerprint: req.Fingerprint,
@@ -128,9 +127,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		LastSeen:    time.Now(),
 	}
 
-	s.devices[req.DeviceID] = device
-	s.tokens[token] = req.DeviceID
+	s.store.Devices[req.DeviceID] = device
+	s.store.Tokens[token] = req.DeviceID
 
+	if err := s.store.Save(); err != nil {
+		log.Printf("relay persist save: %v", err)
+	}
 	json.NewEncoder(w).Encode(map[string]any{"ok": true, "token": token})
 	log.Printf("device registered: %s (%s)", req.DeviceID, req.Fingerprint)
 }
@@ -150,7 +152,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	token = token[7:] // Remove "Bearer "
 
 	s.mu.RLock()
-	deviceID, ok := s.tokens[token]
+	deviceID, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 
 	if !ok {
@@ -177,7 +179,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	blobID := generateBlobID()
-	blob := &Blob{
+	blob := &relay.Blob{
 		ID:        blobID,
 		DeviceID:  req.DeviceID,
 		Format:    req.Format,
@@ -188,13 +190,16 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	s.blobs[blobID] = blob
-	s.blobIdx[req.DeviceID] = blobID
+	s.store.Blobs[blobID] = blob
+	s.store.BlobIdx[req.DeviceID] = blobID
 	// Update last seen.
-	if dev, exists := s.devices[req.DeviceID]; exists {
+	if dev, exists := s.store.Devices[req.DeviceID]; exists {
 		dev.LastSeen = time.Now()
 	}
 	s.mu.Unlock()
+	if err := s.store.Save(); err != nil {
+		log.Printf("relay persist save: %v", err)
+	}
 
 	json.NewEncoder(w).Encode(map[string]any{
 		"ok":       true,
@@ -217,7 +222,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	blobID, ok := s.blobIdx[deviceID]
+	blobID, ok := s.store.BlobIdx[deviceID]
 	s.mu.RUnlock()
 
 	if !ok {
@@ -226,7 +231,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	blob, ok := s.blobs[blobID]
+	blob, ok := s.store.Blobs[blobID]
 	s.mu.RUnlock()
 
 	if !ok {
@@ -235,12 +240,12 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]any{
-		"ok":       true,
-		"blob_id":  blob.ID,
+		"ok":        true,
+		"blob_id":   blob.ID,
 		"device_id": blob.DeviceID,
-		"format":   blob.Format,
-		"data":     blob.Data,
-		"nonce":    blob.Nonce,
+		"format":    blob.Format,
+		"data":      blob.Data,
+		"nonce":     blob.Nonce,
 	})
 }
 
@@ -259,7 +264,7 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	token = token[7:]
 
 	s.mu.RLock()
-	_, ok := s.tokens[token]
+	_, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 
 	if !ok {
@@ -269,7 +274,7 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	var devices []map[string]any
-	for _, dev := range s.devices {
+	for _, dev := range s.store.Devices {
 		devices = append(devices, map[string]any{
 			"device_id":    dev.DeviceID,
 			"public_key":   dev.PublicKey,
@@ -283,61 +288,6 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 		"ok":      true,
 		"devices": devices,
 	})
-}
-
-func (s *Server) handleAddPeer(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Auth check.
-	token := r.Header.Get("Authorization")
-	if token == "" || len(token) < 7 {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	token = token[7:]
-
-	s.mu.RLock()
-	deviceID, ok := s.tokens[token]
-	s.mu.RUnlock()
-
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	var req struct {
-		DeviceID     string `json:"device_id"`
-		PeerDeviceID string `json:"peer_device_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	if req.DeviceID != deviceID {
-		http.Error(w, "device_id mismatch", http.StatusUnauthorized)
-		return
-	}
-
-	// Check if peer exists.
-	s.mu.RLock()
-	_, peerExists := s.devices[req.PeerDeviceID]
-	s.mu.RUnlock()
-
-	if !peerExists {
-		http.Error(w, "peer device not found", http.StatusNotFound)
-		return
-	}
-
-	s.mu.Lock()
-	s.peers[deviceID] = append(s.peers[deviceID], req.PeerDeviceID)
-	s.mu.Unlock()
-
-	json.NewEncoder(w).Encode(map[string]any{"ok": true})
-	log.Printf("peer added: %s -> %s", deviceID, req.PeerDeviceID)
 }
 
 // handleInboxList returns pending clips in the authenticated device's inbox.
@@ -354,7 +304,7 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	deviceID, ok := s.tokens[token]
+	deviceID, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -362,12 +312,12 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	senders := s.inbox[deviceID]
+	senders := s.store.Inbox[deviceID]
 	var pending []map[string]any
 	for senderID, blobID := range senders {
-		if blob, exists := s.blobs[blobID]; exists {
+		if blob, exists := s.store.Blobs[blobID]; exists {
 			fp := ""
-			if dev, ok := s.devices[senderID]; ok {
+			if dev, ok := s.store.Devices[senderID]; ok {
 				fp = dev.Fingerprint
 			}
 			pending = append(pending, map[string]any{
@@ -401,7 +351,7 @@ func (s *Server) handleInboxFetch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	deviceID, ok := s.tokens[token]
+	deviceID, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -415,8 +365,8 @@ func (s *Server) handleInboxFetch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	blobID, hasSender := s.inbox[deviceID][senderID]
-	blob, hasBlob := s.blobs[blobID]
+	blobID, hasSender := s.store.Inbox[deviceID][senderID]
+	blob, hasBlob := s.store.Blobs[blobID]
 	s.mu.RUnlock()
 
 	if !hasSender || !hasBlob {
@@ -436,8 +386,8 @@ func (s *Server) handleInboxFetch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	deviceCount := len(s.devices)
-	blobCount := len(s.blobs)
+	deviceCount := len(s.store.Devices)
+	blobCount := len(s.store.Blobs)
 	s.mu.RUnlock()
 
 	json.NewEncoder(w).Encode(map[string]any{
@@ -455,37 +405,64 @@ func (s *Server) cleanupExpiredBlobs() {
 	for range ticker.C {
 		s.mu.Lock()
 		now := time.Now()
-		for id, blob := range s.blobs {
+		var toExpire []string
+		for id, blob := range s.store.Blobs {
 			if blob.TTL > 0 && now.Sub(blob.Timestamp) > time.Duration(blob.TTL)*time.Second {
-				delete(s.blobs, id)
-				// Also remove from any inboxes
-				for _, senders := range s.inbox {
-					for sender, bID := range senders {
-						if bID == id {
-							delete(senders, sender)
-						}
+				toExpire = append(toExpire, id)
+			}
+		}
+		for _, id := range toExpire {
+			delete(s.store.Blobs, id)
+			// Also remove from any inboxes (collect to avoid range-delete)
+			var rcvToPrune []string
+			for rcv, senders := range s.store.Inbox {
+				for sender, bID := range senders {
+					if bID == id {
+						delete(senders, sender)
 					}
 				}
+				if len(senders) == 0 {
+					rcvToPrune = append(rcvToPrune, rcv)
+				}
+			}
+			for _, rcv := range rcvToPrune {
+				delete(s.store.Inbox, rcv)
+			}
+			var idxToDelete []string
+			for did, bid := range s.store.BlobIdx {
+				if bid == id {
+					idxToDelete = append(idxToDelete, did)
+				}
+			}
+			for _, did := range idxToDelete {
+				delete(s.store.BlobIdx, did)
 			}
 		}
 		s.mu.Unlock()
+		if err := s.store.Compact(); err != nil {
+			log.Printf("relay cleanup save: %v", err)
+		}
 	}
 }
 
 func generateToken() string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, 16)
-	for i := range b {
-		b[i] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[randByte()]
+	if _, err := rand.Read(b); err != nil {
+		// fallback (should never happen)
+		for i := range b {
+			b[i] = byte(time.Now().UnixNano() % 62)
+		}
+	} else {
+		for i := range b {
+			b[i] = alphabet[b[i]%byte(len(alphabet))]
+		}
 	}
 	return string(b)
 }
 
 func generateBlobID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
-}
-
-func randByte() byte {
-	return byte(time.Now().UnixNano() % 62)
 }
 
 // keep imports used until full implementation lands
@@ -505,124 +482,130 @@ func parseBearer(h string) string {
 	return strings.TrimSpace(h[7:])
 }
 
-// New: upload to a specific receiver's inbox: /api/v1/upload/{receiver}
+// handleUploadTo uploads an encrypted blob into a specific receiver's inbox.
 func (s *Server) handleUploadTo(w http.ResponseWriter, r *http.Request) {
-if r.Method != http.MethodPost {
-http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-return
-}
-token := parseBearer(r.Header.Get("Authorization"))
-if token == "" {
-http.Error(w, "unauthorized", http.StatusUnauthorized)
-return
-}
-s.mu.RLock()
-senderID, ok := s.tokens[token]
-s.mu.RUnlock()
-if !ok {
-http.Error(w, "unauthorized", http.StatusUnauthorized)
-return
-}
-receiverID := strings.TrimPrefix(r.URL.Path, "/api/v1/upload/")
-if receiverID == "" {
-http.Error(w, "missing receiver_device_id", http.StatusBadRequest)
-return
-}
-var req struct {
-DeviceID  string `json:"device_id"`
-Format    string `json:"format"`
-Data      string `json:"data"`
-Nonce     string `json:"nonce"`
-Timestamp int64  `json:"timestamp"`
-TTL       int    `json:"ttl"`
-}
-if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-http.Error(w, "invalid JSON", http.StatusBadRequest)
-return
-}
-if req.DeviceID != senderID {
-http.Error(w, "device_id mismatch", http.StatusUnauthorized)
-return
-}
-blobID := generateBlobID()
-blob := &Blob{
-ID:        blobID,
-DeviceID:  req.DeviceID, // sender
-Format:    req.Format,
-Data:      req.Data,
-Nonce:     req.Nonce,
-Timestamp: time.Unix(req.Timestamp, 0),
-TTL:       req.TTL,
-}
-s.mu.Lock()
-s.blobs[blobID] = blob
-if s.inbox[receiverID] == nil {
-s.inbox[receiverID] = make(map[string]string)
-}
-s.inbox[receiverID][senderID] = blobID
-if dev, exists := s.devices[senderID]; exists {
-dev.LastSeen = time.Now()
-}
-s.mu.Unlock()
-json.NewEncoder(w).Encode(map[string]any{"ok": true, "blob_id": blobID, "received": len(req.Data)})
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	token := parseBearer(r.Header.Get("Authorization"))
+	if token == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	s.mu.RLock()
+	senderID, ok := s.store.Tokens[token]
+	s.mu.RUnlock()
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	receiverID := strings.TrimPrefix(r.URL.Path, "/api/v1/upload/")
+	if receiverID == "" {
+		http.Error(w, "missing receiver_device_id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		DeviceID  string `json:"device_id"`
+		Format    string `json:"format"`
+		Data      string `json:"data"`
+		Nonce     string `json:"nonce"`
+		Timestamp int64  `json:"timestamp"`
+		TTL       int    `json:"ttl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.DeviceID != senderID {
+		http.Error(w, "device_id mismatch", http.StatusUnauthorized)
+		return
+	}
+	blobID := generateBlobID()
+	blob := &relay.Blob{
+		ID:        blobID,
+		DeviceID:  req.DeviceID, // sender
+		Format:    req.Format,
+		Data:      req.Data,
+		Nonce:     req.Nonce,
+		Timestamp: time.Unix(req.Timestamp, 0),
+		TTL:       req.TTL,
+	}
+	s.mu.Lock()
+	s.store.Blobs[blobID] = blob
+	if s.store.Inbox[receiverID] == nil {
+		s.store.Inbox[receiverID] = make(map[string]string)
+	}
+	s.store.Inbox[receiverID][senderID] = blobID
+	if dev, exists := s.store.Devices[senderID]; exists {
+		dev.LastSeen = time.Now()
+	}
+	s.mu.Unlock()
+	if err := s.store.Save(); err != nil {
+		log.Printf("relay persist save: %v", err)
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "blob_id": blobID, "received": len(req.Data)})
 }
 
-// New: peers endpoint supports GET (list) and POST (add)
+// handlePeers supports GET (list my peers with pubkeys) and POST (add peer).
 func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
-if r.Method != http.MethodGet && r.Method != http.MethodPost {
-http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-return
-}
-token := parseBearer(r.Header.Get("Authorization"))
-if token == "" {
-http.Error(w, "unauthorized", http.StatusUnauthorized)
-return
-}
-s.mu.RLock()
-deviceID, ok := s.tokens[token]
-s.mu.RUnlock()
-if !ok {
-http.Error(w, "unauthorized", http.StatusUnauthorized)
-return
-}
-if r.Method == http.MethodGet {
-s.mu.RLock()
-var items []map[string]any
-for _, pid := range s.peers[deviceID] {
-if dev, ok := s.devices[pid]; ok {
-items = append(items, map[string]any{
-"device_id":  dev.DeviceID,
-"public_key": dev.PublicKey,
-"fingerprint": dev.Fingerprint,
-})
-}
-}
-s.mu.RUnlock()
-json.NewEncoder(w).Encode(map[string]any{"ok": true, "peers": items})
-return
-}
-var req struct {
-DeviceID     string `json:"device_id"`
-PeerDeviceID string `json:"peer_device_id"`
-}
-if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-http.Error(w, "invalid JSON", http.StatusBadRequest)
-return
-}
-if req.DeviceID != deviceID {
-http.Error(w, "device_id mismatch", http.StatusUnauthorized)
-return
-}
-s.mu.RLock()
-_, peerExists := s.devices[req.PeerDeviceID]
-s.mu.RUnlock()
-if !peerExists {
-http.Error(w, "peer device not found", http.StatusNotFound)
-return
-}
-s.mu.Lock()
-s.peers[deviceID] = append(s.peers[deviceID], req.PeerDeviceID)
-s.mu.Unlock()
-json.NewEncoder(w).Encode(map[string]any{"ok": true})
-log.Printf("peer added: %s -> %s", deviceID, req.PeerDeviceID)
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	token := parseBearer(r.Header.Get("Authorization"))
+	if token == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	s.mu.RLock()
+	deviceID, ok := s.store.Tokens[token]
+	s.mu.RUnlock()
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method == http.MethodGet {
+		s.mu.RLock()
+		var items []map[string]any
+		for _, pid := range s.store.Peers[deviceID] {
+			if dev, ok := s.store.Devices[pid]; ok {
+				items = append(items, map[string]any{
+					"device_id":   dev.DeviceID,
+					"public_key":  dev.PublicKey,
+					"fingerprint": dev.Fingerprint,
+				})
+			}
+		}
+		s.mu.RUnlock()
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "peers": items})
+		return
+	}
+	var req struct {
+		DeviceID     string `json:"device_id"`
+		PeerDeviceID string `json:"peer_device_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.DeviceID != deviceID {
+		http.Error(w, "device_id mismatch", http.StatusUnauthorized)
+		return
+	}
+	s.mu.RLock()
+	_, peerExists := s.store.Devices[req.PeerDeviceID]
+	s.mu.RUnlock()
+	if !peerExists {
+		http.Error(w, "peer device not found", http.StatusNotFound)
+		return
+	}
+	s.mu.Lock()
+	s.store.Peers[deviceID] = append(s.store.Peers[deviceID], req.PeerDeviceID)
+	s.mu.Unlock()
+	if err := s.store.Save(); err != nil {
+		log.Printf("relay persist save: %v", err)
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	log.Printf("peer added: %s -> %s", deviceID, req.PeerDeviceID)
 }

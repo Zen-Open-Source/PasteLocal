@@ -1,0 +1,47 @@
+---
+name: paste
+description: >
+  Paste the latest image or text from the user's local laptop clipboard into this
+  remote Grok session using PasteLocal (SSH tunnel or relay).
+allowed-tools: Bash(pastelocal-remote:*), Read(*), Bash(rm:*)
+metadata:
+  short-description: "Bring laptop screenshots/text into remote Grok via PasteLocal"
+  category: "clipboard"
+---
+
+# PasteLocal /paste — Grok Skill
+
+Bring your laptop's clipboard (especially screenshots) into a remote machine where Grok is running.
+
+## When to use
+- User says "paste the screenshot", "grab what's on my clipboard", "show me the image from my laptop", etc.
+- Works over existing SSH (preferred) or the experimental relay.
+
+## Steps (execute in order)
+
+1. **Try the SSH-tunnel path first** (fastest, most common):
+   - Run `pastelocal-remote` via the Bash tool.
+   - It will print a file path on success (e.g. `/home/user/.cache/pastelocal/pastelocal-abc123.png`).
+
+2. **If the SSH path fails or user explicitly wants relay** (no direct tunnel or multi-device scenario):
+   - Run `pastelocal-remote --relay <url>` (user must provide the relay URL or it is in their config).
+   - Or `pastelocal-remote --relay http://localhost:7332 --list` to see options, then fetch a specific one.
+   - The command still prints a file path.
+
+3. **On any failure (non-zero exit)**: Report the **exact** stderr to the user verbatim and stop. Do not retry or guess.
+
+4. **Read the file** using your Read tool on the exact path returned.
+
+5. **Clean up**: Immediately run `rm <path>` (use Bash) so the temp file does not linger.
+
+6. **Confirm** with one short line:
+   - Image: "Got it, image attached from your laptop clipboard."
+   - Text: "Got it, text attached from your laptop clipboard."
+   - If it came via relay: "Got it via relay, image attached."
+
+## Tips for great UX
+- If the user has multiple devices paired via relay, you may need to ask "which one?" and use `--list`.
+- After attaching a screenshot, offer to analyze it, extract text, or describe it.
+- For repeated use, suggest the user saves a named snippet locally with `pastelocal snippets save my-design`.
+
+This skill is the Grok-native equivalent of the Claude `~/.claude/commands/paste.md`. It prefers the zero-config SSH experience when available.

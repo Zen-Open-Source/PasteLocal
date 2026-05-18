@@ -149,22 +149,13 @@ pastelocal-remote --snippet api-key
 
 ---
 
-## Experimental: Multi-Device Relay
+## Multi-Device Relay (v1.0)
 
-PasteLocal has an **experimental** relay system that allows clipboard sharing between multiple devices without requiring direct SSH tunnels.
+PasteLocal has a **production-ready relay** (v1.0) that allows E2E-encrypted clipboard sharing between any number of devices without requiring direct SSH tunnels between every pair. See docs/RELAY.md for full setup, commands, and auto-sync configuration.
 
-**Current Status:** Experimental / Preview
+**Current Status:** v1.0 — persistence, per-peer encryption, CLI verbs, watcher auto-push, and Grok skills are complete and durable.
 
-**What works today:**
-- Device pairing with end-to-end encryption (X25519 + AES-GCM)
-- Receiving clipboard content from paired peers via `pastelocal-remote --relay`
-
-**What is still in progress:**
-- Reliable sending from the local daemon
-- Background notifications
-- Persistence across relay restarts
-
-**Recommendation:** Use the SSH-based workflow for daily work. The relay is intended for testing and specific multi-machine setups.
+**Recommendation:** Use the SSH-based workflow for daily work. The relay is the recommended path for multi-device, cloud, or no-direct-tunnel scenarios.
 
 ---
 

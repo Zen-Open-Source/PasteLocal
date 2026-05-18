@@ -296,28 +296,9 @@ func (s *Server) handleClipboardPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 8b: Upload to relay if enabled and auto-upload is on.
+	// Step 8b: Upload to relay peers if enabled and auto-upload is on (non-blocking, best-effort).
 	if s.relayClient != nil && s.cfg.Relay.AutoUpload {
-		go func() {
-			nonce, err := crypto.GenerateNonce()
-			if err != nil {
-				s.logger.Warn("failed to generate nonce for relay upload", "err", err)
-				return
-			}
-			// For now, encrypt with own key (placeholder - should encrypt for peers)
-			sharedSecret := s.relayKeyPair.PrivateKey.Bytes()
-			encryptedData, err := crypto.Encrypt(content.Data, sharedSecret, nonce)
-			if err != nil {
-				s.logger.Warn("failed to encrypt for relay upload", "err", err)
-				return
-			}
-			_, err = s.relayClient.Upload(content.Format, encryptedData, nonce, s.cfg.Relay.UploadTTL)
-			if err != nil {
-				s.logger.Warn("failed to upload to relay", "err", err)
-			} else {
-				s.logger.Info("uploaded to relay", "format", content.Format, "size", len(content.Data))
-			}
-		}()
+		go s.pushToRelayPeers(content.Format, content.Data)
 	}
 
 	// Step 9: Build success response.
@@ -499,4 +480,43 @@ func extractRemoteIP(r *http.Request) string {
 // generateEntryID creates a unique ID for a history entry.
 func generateEntryID(t time.Time, format string) string {
 	return fmt.Sprintf("%d-%s", t.UnixNano(), format)
+}
+
+// pushToRelayPeers encrypts the clipboard content for each configured peer
+// and uploads to their relay inbox. Called in goroutine from write path and watcher.
+// Never blocks; logs warnings on failure.
+func (s *Server) pushToRelayPeers(format string, data []byte) {
+	if s.relayClient == nil || s.relayKeyPair == nil {
+		return
+	}
+	peersResp, err := s.relayClient.ListPeers()
+	if err != nil {
+		s.logger.Warn("relay push: list peers failed", "err", err)
+		return
+	}
+	if !peersResp.OK || len(peersResp.Peers) == 0 {
+		return
+	}
+
+	ttl := s.cfg.Relay.UploadTTL
+	if ttl <= 0 {
+		ttl = 300
+	}
+
+	success := 0
+	for _, p := range peersResp.Peers {
+		pub, err := crypto.ParsePublicKey(p.PublicKey)
+		if err != nil {
+			s.logger.Warn("relay push: bad peer pubkey", "peer", p.DeviceID, "err", err)
+			continue
+		}
+		if _, err := s.relayClient.EncryptAndUploadTo(pub, p.DeviceID, format, data, ttl); err != nil {
+			s.logger.Warn("relay push: encrypt/upload failed for peer", "peer", p.Fingerprint, "err", err)
+			continue
+		}
+		success++
+	}
+	if success > 0 {
+		s.logger.Info("relay push: uploaded to peers", "peers", success, "format", format, "bytes", len(data))
+	}
 }
