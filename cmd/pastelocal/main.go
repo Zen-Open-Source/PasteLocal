@@ -1301,9 +1301,36 @@ var relayAddPeerCmd = &cobra.Command{
 	RunE:  runRelayAddPeer,
 }
 
+var relaySendCmd = &cobra.Command{
+	Use:   "send <peer-device-id-or-fp> [file]",
+	Short: "Encrypt and send clipboard (or file) to a peer via relay",
+	Args:  cobra.MinimumNArgs(1),
+	RunE:  runRelaySend,
+}
+
+var relayInboxCmd = &cobra.Command{
+	Use:   "inbox",
+	Short: "List pending items in your relay inbox",
+	RunE:  runRelayInbox,
+}
+
+var relayFetchCmd = &cobra.Command{
+	Use:   "fetch <sender-device-id-or-fp>",
+	Short: "Fetch and decrypt a specific inbox item from a sender (writes temp file)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runRelayFetchCLI,
+}
+
+var relayStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show relay configuration, peers, and connectivity",
+	RunE:  runRelayStatus,
+}
+
 var (
-	relayFlagURL string
-	relayFlagTTL int
+	relayFlagURL  string
+	relayFlagTTL  int
+	relaySendFile string
 )
 
 func init() {
@@ -1311,11 +1338,20 @@ func init() {
 	relayPairCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
 	relayDevicesCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
 	relayAddPeerCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+	relaySendCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+	relaySendCmd.Flags().StringVar(&relaySendFile, "file", "", "file to send (default: current clipboard)")
+	relayInboxCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+	relayFetchCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
+	relayStatusCmd.Flags().StringVar(&relayFlagURL, "relay-url", "http://localhost:7332", "relay server URL")
 
 	relayCmd.AddCommand(relayInitCmd)
 	relayCmd.AddCommand(relayPairCmd)
 	relayCmd.AddCommand(relayDevicesCmd)
 	relayCmd.AddCommand(relayAddPeerCmd)
+	relayCmd.AddCommand(relaySendCmd)
+	relayCmd.AddCommand(relayInboxCmd)
+	relayCmd.AddCommand(relayFetchCmd)
+	relayCmd.AddCommand(relayStatusCmd)
 	rootCmd.AddCommand(relayCmd)
 }
 
@@ -1485,4 +1521,263 @@ func expandHome(path string) string {
 		return path
 	}
 	return filepath.Join(home, path[1:])
+}
+
+// runRelaySend implements `pastelocal relay send <peer> [--file F]`
+func runRelaySend(cmd *cobra.Command, args []string) error {
+	peer := args[0]
+	if len(args) > 1 && relaySendFile == "" {
+		relaySendFile = args[1]
+	}
+
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fail("device key not found. Run 'pastelocal relay init' first: %v", err)
+	}
+	kp, err := crypto.LoadKeyPairFromBase64(string(keyData))
+	if err != nil {
+		return fail("loading keypair: %v", err)
+	}
+
+	tokenPath := filepath.Join(expandHome("~/.config/pastelocal"), "relay-token")
+	tokenData, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return fail("relay token not found. Run 'pastelocal relay pair' first: %v", err)
+	}
+
+	client := relay.NewClient(relayFlagURL, kp.DeviceID(), kp, string(tokenData))
+
+	var data []byte
+	format := "text"
+	if relaySendFile != "" {
+		data, err = os.ReadFile(relaySendFile)
+		if err != nil {
+			return fail("reading file: %v", err)
+		}
+		if len(data) > 8 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' {
+			format = "png"
+		}
+	} else {
+		// Read local clipboard (best effort on this host)
+		// Use a simple approach to avoid heavy deps in control CLI for v1
+		// (user can always use --file or the watcher auto path)
+		return fail("no --file provided and clipboard read from 'pastelocal relay send' not wired for v1 (use the daemon watcher or pastelocal-remote --send for now)")
+	}
+
+	// Resolve peer pubkey
+	var pubB64 string
+	var targetID = peer
+	peersResp, _ := client.ListPeers()
+	if peersResp != nil && peersResp.OK {
+		for _, p := range peersResp.Peers {
+			if p.DeviceID == peer || p.Fingerprint == peer || strings.HasPrefix(p.DeviceID, peer) {
+				pubB64 = p.PublicKey
+				targetID = p.DeviceID
+				break
+			}
+		}
+	}
+	if pubB64 == "" {
+		devs, _ := client.ListDevices()
+		if devs != nil && devs.OK {
+			for _, d := range devs.Devices {
+				if d.DeviceID == peer || d.Fingerprint == peer || strings.HasPrefix(d.DeviceID, peer) {
+					pubB64 = d.PublicKey
+					targetID = d.DeviceID
+					break
+				}
+			}
+		}
+	}
+	if pubB64 == "" {
+		return fail("peer %s not found or has no pubkey (add-peer both directions first)", peer)
+	}
+
+	pub, err := crypto.ParsePublicKey(pubB64)
+	if err != nil {
+		return fail("parsing peer pubkey: %v", err)
+	}
+
+	_, err = client.EncryptAndUploadTo(pub, targetID, format, data, 300)
+	if err != nil {
+		return fail("send via relay: %v", err)
+	}
+	fmt.Printf("Sent to peer %s via relay (format=%s, %d bytes)\n", targetID, format, len(data))
+	return nil
+}
+
+// runRelayInbox lists pending relay inbox items.
+func runRelayInbox(cmd *cobra.Command, args []string) error {
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fail("device key not found. Run 'pastelocal relay init' first: %v", err)
+	}
+	kp, err := crypto.LoadKeyPairFromBase64(string(keyData))
+	if err != nil {
+		return fail("loading keypair: %v", err)
+	}
+	tokenPath := filepath.Join(expandHome("~/.config/pastelocal"), "relay-token")
+	tokenData, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return fail("relay token not found. Run 'pastelocal relay pair' first: %v", err)
+	}
+
+	client := relay.NewClient(relayFlagURL, kp.DeviceID(), kp, string(tokenData))
+	resp, err := client.ListInbox()
+	if err != nil {
+		return fail("listing inbox: %v", err)
+	}
+	if !resp.OK {
+		return fail("inbox error: %s", resp.Error)
+	}
+	if len(resp.Pending) == 0 {
+		fmt.Println("Inbox empty.")
+		return nil
+	}
+	fmt.Printf("%-20s %-12s %s\n", "SENDER FP", "FORMAT", "TIME")
+	for _, it := range resp.Pending {
+		t := time.Unix(it.Timestamp, 0).Format("2006-01-02 15:04")
+		fmt.Printf("%-20s %-12s %s\n", it.Fingerprint, it.Format, t)
+	}
+	fmt.Println("\nUse 'pastelocal relay fetch <sender-id>' to retrieve one.")
+	return nil
+}
+
+// runRelayFetchCLI fetches one inbox item and writes it (like remote).
+func runRelayFetchCLI(cmd *cobra.Command, args []string) error {
+	sender := args[0]
+
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fail("device key not found. Run 'pastelocal relay init' first: %v", err)
+	}
+	kp, err := crypto.LoadKeyPairFromBase64(string(keyData))
+	if err != nil {
+		return fail("loading keypair: %v", err)
+	}
+	tokenPath := filepath.Join(expandHome("~/.config/pastelocal"), "relay-token")
+	tokenData, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return fail("relay token not found. Run 'pastelocal relay pair' first: %v", err)
+	}
+
+	client := relay.NewClient(relayFlagURL, kp.DeviceID(), kp, string(tokenData))
+
+	// normalize sender if fingerprint etc by listing
+	senderID := sender
+	// try list inbox to get full id if fp given, or just use
+	download, err := client.FetchFromInbox(senderID)
+	if err != nil || !download.OK {
+		// try resolve via devices
+		devs, _ := client.ListDevices()
+		if devs != nil {
+			for _, d := range devs.Devices {
+				if d.Fingerprint == sender || strings.HasPrefix(d.DeviceID, sender) {
+					senderID = d.DeviceID
+					break
+				}
+			}
+		}
+		download, err = client.FetchFromInbox(senderID)
+	}
+	if err != nil {
+		return fail("fetch: %v", err)
+	}
+	if !download.OK {
+		return fail("fetch error: %s", download.Error)
+	}
+
+	// resolve pubkey
+	pubB64 := ""
+	devs, _ := client.ListDevices()
+	if devs != nil && devs.OK {
+		for _, d := range devs.Devices {
+			if d.DeviceID == senderID {
+				pubB64 = d.PublicKey
+				break
+			}
+		}
+	}
+	if pubB64 == "" {
+		return fail("no pubkey for sender %s", senderID)
+	}
+	pub, err := crypto.ParsePublicKey(pubB64)
+	if err != nil {
+		return fail("parse pubkey: %v", err)
+	}
+
+	enc, err := base64.StdEncoding.DecodeString(download.Data)
+	if err != nil {
+		return fail("decode data: %v", err)
+	}
+	non, err := base64.StdEncoding.DecodeString(download.Nonce)
+	if err != nil {
+		return fail("decode nonce: %v", err)
+	}
+	shared, err := kp.SharedSecret(pub)
+	if err != nil {
+		return fail("shared secret: %v", err)
+	}
+	plain, err := crypto.Decrypt(enc, shared, non)
+	if err != nil {
+		return fail("decrypt: %v", err)
+	}
+
+	// write temp like remote does (simplified)
+	outDir := expandHome("~/.cache/pastelocal")
+	os.MkdirAll(outDir, 0700)
+	ext := "bin"
+	if download.Format == "png" {
+		ext = "png"
+	}
+	path := filepath.Join(outDir, fmt.Sprintf("relay-%s-%d.%s", senderID[:8], time.Now().Unix(), ext))
+	if err := os.WriteFile(path, plain, 0600); err != nil {
+		return fail("write: %v", err)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	fmt.Println(abs)
+	return nil
+}
+
+// runRelayStatus shows relay health for the local device.
+func runRelayStatus(cmd *cobra.Command, args []string) error {
+	keyPath := filepath.Join(expandHome("~/.config/pastelocal"), "device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		fmt.Println("No device key (run 'pastelocal relay init').")
+		return nil
+	}
+	kp, _ := crypto.LoadKeyPairFromBase64(string(keyData))
+	fmt.Printf("Device ID:   %s\n", kp.DeviceID())
+	fmt.Printf("Fingerprint: %s\n", kp.Fingerprint())
+
+	tokenPath := filepath.Join(expandHome("~/.config/pastelocal"), "relay-token")
+	if td, err := os.ReadFile(tokenPath); err == nil {
+		fmt.Printf("Token:       %s\n", strings.TrimSpace(string(td)))
+	}
+
+	client := relay.NewClient(relayFlagURL, kp.DeviceID(), kp, "")
+	// try unauth health
+	// but for simplicity just try list devices (requires token? for now load token if present)
+	if td, err := os.ReadFile(tokenPath); err == nil {
+		client = relay.NewClient(relayFlagURL, kp.DeviceID(), kp, strings.TrimSpace(string(td)))
+		resp, err := client.ListDevices()
+		if err == nil && resp.OK {
+			fmt.Printf("Relay at %s: %d devices registered\n", relayFlagURL, len(resp.Devices))
+		} else {
+			fmt.Printf("Relay %s: %v\n", relayFlagURL, err)
+		}
+		peers, _ := client.ListPeers()
+		if peers != nil && peers.OK {
+			fmt.Printf("Your peers: %d\n", len(peers.Peers))
+		}
+	}
+	fmt.Println("Auto-upload in daemon: check ~/.config/pastelocal/config.toml [relay] auto_upload = true")
+	return nil
 }

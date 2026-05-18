@@ -44,9 +44,12 @@ func main() {
 	// Relay mode: fetch from relay instead of local daemon.
 	relayURL := flag.String("relay", "", "relay URL to fetch from (e.g., http://localhost:7332)")
 
+	// For relay send: target peer (device ID or fingerprint from 'pastelocal relay devices')
+	relayPeer := flag.String("peer", "", "target peer device ID for --relay --send")
+
 	flag.Parse()
 
-	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index, *snippet, *relayURL))
+	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index, *snippet, *relayURL, *relayPeer))
 }
 
 // expandHome replaces a leading ~ with the user's home directory.
@@ -70,7 +73,7 @@ func readToken(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int, snippetName string, relayURL string) int {
+func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int, snippetName string, relayURL string, relayPeer string) int {
 	token, err := readToken(tokenFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading token: %v\n", err)
@@ -85,12 +88,17 @@ func run(port int, outDir string, timeout time.Duration, tokenFile string, sendP
 		return runWatch(baseURL, token)
 	}
 
-	// Send mode: push a file to the local clipboard.
-	if sendPath != "" {
+	// Send mode: push a file to the local clipboard (SSH path).
+	if sendPath != "" && relayURL == "" {
 		return runSend(client, baseURL, token, sendPath, sendFormat)
 	}
 
-	// Relay mode: fetch from relay instead of local daemon.
+	// Relay send: push file to a peer via relay (new in v1).
+	if sendPath != "" && relayURL != "" {
+		return runRelaySend(relayURL, sendPath, sendFormat, relayPeer)
+	}
+
+	// Relay mode: fetch/list inbox from relay.
 	if relayURL != "" {
 		return runRelayFetch(client, relayURL, outDir)
 	}
@@ -835,4 +843,95 @@ func randomString(n int) string {
 		b[i] = randChars[rand.Intn(len(randChars))]
 	}
 	return string(b)
+}
+
+// runRelaySend pushes a local file to a peer's relay inbox (E2EE).
+// Used when both --relay and --send are provided.
+func runRelaySend(relayURL, filePath, format, peerDeviceID string) int {
+	if peerDeviceID == "" {
+		fmt.Fprintf(os.Stderr, "error: --peer <device-id> is required for relay send (see 'pastelocal relay devices' or 'pastelocal relay inbox')\n")
+		return 10
+	}
+
+	keyPath := expandHome("~/.config/pastelocal/device-key")
+	tokenPath := expandHome("~/.config/pastelocal/relay-token")
+
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "device key not found. Run 'pastelocal relay init' first: %v\n", err)
+		return 10
+	}
+	tokenData, err := os.ReadFile(tokenPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "relay token not found. Run 'pastelocal relay pair' first: %v\n", err)
+		return 10
+	}
+
+	kp, err := crypto.LoadKeyPairFromBase64(strings.TrimSpace(string(keyData)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load device keypair: %v\n", err)
+		return 10
+	}
+	deviceID := kp.DeviceID()
+	token := strings.TrimSpace(string(tokenData))
+
+	rclient := relay.NewClient(relayURL, deviceID, kp, token)
+
+	// Read file
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read file: %v\n", err)
+		return 10
+	}
+	if format == "" {
+		if len(data) > 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' {
+			format = "png"
+		} else {
+			format = "text"
+		}
+	}
+
+	// Resolve peer pubkey (prefer peers list, fall back to devices)
+	var peerPubB64 string
+	peers, _ := rclient.ListPeers()
+	if peers != nil && peers.OK {
+		for _, p := range peers.Peers {
+			if p.DeviceID == peerDeviceID || p.Fingerprint == peerDeviceID || strings.HasPrefix(p.DeviceID, peerDeviceID) {
+				peerPubB64 = p.PublicKey
+				peerDeviceID = p.DeviceID // normalize
+				break
+			}
+		}
+	}
+	if peerPubB64 == "" {
+		devs, _ := rclient.ListDevices()
+		if devs != nil && devs.OK {
+			for _, d := range devs.Devices {
+				if d.DeviceID == peerDeviceID || d.Fingerprint == peerDeviceID || strings.HasPrefix(d.DeviceID, peerDeviceID) {
+					peerPubB64 = d.PublicKey
+					peerDeviceID = d.DeviceID
+					break
+				}
+			}
+		}
+	}
+	if peerPubB64 == "" {
+		fmt.Fprintf(os.Stderr, "could not find public key for peer %s (have you run 'pastelocal relay add-peer' on both sides?)\n", peerDeviceID)
+		return 10
+	}
+
+	peerPub, err := crypto.ParsePublicKey(peerPubB64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse peer public key: %v\n", err)
+		return 10
+	}
+
+	_, err = rclient.EncryptAndUploadTo(peerPub, peerDeviceID, format, data, 300)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "relay send failed: %v\n", err)
+		return 10
+	}
+
+	fmt.Printf("Sent %s (%s) to peer %s via relay.\n", filePath, format, peerDeviceID)
+	return 0
 }

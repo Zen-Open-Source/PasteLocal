@@ -655,3 +655,51 @@ func userSSHConfigPath() string {
 	}
 	return filepath.Join(home, ".ssh", "config")
 }
+
+// checkRelayDeviceKey verifies the X25519 key for relay exists with correct perms.
+func checkRelayDeviceKey() CheckResult {
+	keyPath := expandRelayPath("~/.config/pastelocal/device-key")
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		return CheckResult{
+			Name:    "Relay device key",
+			Passed:  false,
+			Detail:  "missing (run 'pastelocal relay init')",
+			FixHint: "pastelocal relay init",
+			AutoFix: false,
+		}
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		return CheckResult{
+			Name:    "Relay device key",
+			Passed:  false,
+			Detail:  "permissions too open (should be 0600)",
+			FixHint: "chmod 600 " + keyPath,
+			AutoFix: false,
+		}
+	}
+	return CheckResult{Name: "Relay device key", Passed: true, Detail: "present (0600)"}
+}
+
+// checkRelayToken verifies a relay auth token exists (after pair).
+func checkRelayToken() CheckResult {
+	tokenPath := expandRelayPath("~/.config/pastelocal/relay-token")
+	if _, err := os.Stat(tokenPath); err != nil {
+		return CheckResult{
+			Name:    "Relay auth token",
+			Passed:  false,
+			Detail:  "missing (run 'pastelocal relay pair <url>')",
+			FixHint: "pastelocal relay pair <your-relay-url>",
+			AutoFix: false,
+		}
+	}
+	return CheckResult{Name: "Relay auth token", Passed: true, Detail: "present"}
+}
+
+func expandRelayPath(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, p[2:])
+	}
+	return p
+}
