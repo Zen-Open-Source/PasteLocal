@@ -28,23 +28,25 @@ It’s the most reliable way today to bring your local clipboard into remote dev
 
 ## 60-Second Quick Start
 
+The easiest way to get started:
+
 ```bash
-# 1. Install the CLI (recommended)
-go install github.com/Zen-Open-Source/PasteLocal/cmd/pastelocal@latest
+# 1. Build from source (most reliable method for v0.1.0)
+git clone https://github.com/Zen-Open-Source/PasteLocal.git
+cd PasteLocal
+make build
 
-# 2. Set up the local daemon and generate a secure token
-pastelocal init
+# 2. Initialize the local daemon
+./bin/pastelocal init
 
-# 3. Add your remote server (this edits your SSH config and installs the remote helper)
-pastelocal add-host myserver
+# 3. Add your remote host (automatically sets up SSH forwarding)
+./bin/pastelocal add-host myserver
 
-# 4. SSH into the server and pull your local clipboard
-pastelocal-remote
+# 4. On the remote server, pull your local clipboard
+./bin/pastelocal-remote
 ```
 
-`pastelocal-remote` will save the latest clipboard content (including screenshots) to a file on the remote machine and print the path.
-
-You can then use the `/paste` skill (or just read the file) inside your agentic coding tool.
+`pastelocal-remote` will save your latest clipboard content (including screenshots) to a file on the remote machine and print the path. You can then read it with your agentic coding tool.
 
 ---
 
@@ -74,13 +76,11 @@ You can then use the `/paste` skill (or just read the file) inside your agentic 
 
 ## Installation
 
-### Recommended: Go Install
+### Download Pre-built Binary (Easiest)
 
-```bash
-go install github.com/Zen-Open-Source/PasteLocal/cmd/pastelocal@latest
-```
+Download the latest release for your platform from the [Releases page](https://github.com/Zen-Open-Source/PasteLocal/releases).
 
-### Build from Source
+### Build from Source (Recommended)
 
 ```bash
 git clone https://github.com/Zen-Open-Source/PasteLocal.git
@@ -88,9 +88,15 @@ cd PasteLocal
 make build
 ```
 
-Binaries will be in the `bin/` directory.
+The binaries will be in the `bin/` directory.
 
-> **Note for v0.1.0:** The recommended `go install` command above may not work yet because the Go module path is still being migrated. For the most reliable experience, we recommend cloning the repo and running `make build` instead.
+### Go Install
+
+```bash
+go install github.com/Zen-Open-Source/PasteLocal/cmd/pastelocal@latest
+```
+
+> **Note:** Due to a pending module path update, `go install` may not work reliably yet. We plan to support it properly in a future release. For now, downloading a release or building from source is recommended.
 
 ---
 
