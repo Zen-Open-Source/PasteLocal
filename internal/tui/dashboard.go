@@ -39,7 +39,33 @@ var (
 
 	keyStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+
+	// fieldStyle for subtle labels inside boxes (calm, readable).
+	fieldStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#AAAAAA"))
+
+	// mutedStyle for secondary / placeholder text.
+	mutedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666"))
 )
+
+// renderBox renders the given inner content inside a copy of the provided
+// box style (which may have Width set for consistent sizing). When termWidth
+// > 0 the resulting block is horizontally centered using PlaceHorizontal.
+// Three lightweight strategies exist in View:
+//   - header: capped Width + Align, then optional Place for full-term centering
+//   - boxes: adaptive safe boxW (accounting for border+pad) + Place via this helper
+//   - footer: raw Place
+//
+// This keeps the helper tiny while avoiding overflow on narrow terminals and
+// m.width==0 (pre-WindowSizeMsg) initial renders.
+func renderBox(inner string, termWidth int, st lipgloss.Style) string {
+	s := st.Render(inner)
+	if termWidth > 0 {
+		s = lipgloss.PlaceHorizontal(termWidth, lipgloss.Center, s)
+	}
+	return s
+}
 
 // tickMsg is sent every second to refresh the dashboard.
 type tickMsg time.Time
@@ -123,73 +149,141 @@ func (m Model) View() string {
 
 	var b strings.Builder
 
-	// Title
-	b.WriteString(titleStyle.Render(" pastelocal dashboard "))
+	// Full-width colored header banner (professional anchor, uses captured width).
+	// Capped at 100 for very wide terminals; always PlaceHorizontal-centered when
+	// m.width > 0 so it matches the geometry of the content cards and footer.
+	title := "pastelocal dashboard"
+	titleSt := titleStyle.Copy()
+	termW := m.width
+	if termW > 0 {
+		if termW > 100 {
+			termW = 100
+		}
+		titleSt = titleSt.Width(termW).Align(lipgloss.Center)
+	}
+	titleRendered := titleSt.Render(title)
+	if m.width > 0 {
+		titleRendered = lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleRendered)
+	}
+	b.WriteString(titleRendered)
 	b.WriteString("\n\n")
 
-	// Daemon status
-	statusStr := "stopped"
-	statusStyle := statusErrStyle
-	if m.running {
-		if m.healthy {
-			statusStr = "running"
-			statusStyle = statusOkStyle
-		} else {
-			statusStr = "degraded"
-			statusStyle = statusWarnStyle
+	// Consistent box width + centering for visual weight and breathing room.
+	// targetContentWidth (72) chosen for comfortable reading on typical terminals
+	// while degrading gracefully. The calculation ensures final rendered outer
+	// width (content + 4 pad + 2 border) never exceeds m.width, preventing
+	// overflow/clipping on narrow terminals or the initial m.width==0 render.
+	boxW := 60 // safe default when m.width==0 (before first WindowSizeMsg)
+	if m.width > 0 {
+		// lipgloss bordered+padded box outer width ≈ boxW + 6
+		maxOuter := m.width
+		desired := 72
+		boxW = desired
+		if boxW > maxOuter-6 {
+			boxW = maxOuter - 6
+		}
+		if boxW < 20 {
+			boxW = 20
 		}
 	}
+	boxSt := boxStyle.Copy().Width(boxW)
 
-	daemonBox := fmt.Sprintf("  Daemon: %s\n  Port:   %d (loopback)\n  PID:    %d\n  Uptime: %s",
-		statusStyle.Render(statusStr), m.port, m.pid, m.uptime)
-	b.WriteString(boxStyle.Render(daemonBox))
+	// Daemon status box (status icon + color for instant scannability).
+	var statusStyled string
+	if m.running {
+		if m.healthy {
+			statusStyled = statusOkStyle.Render("● running")
+		} else {
+			statusStyled = statusWarnStyle.Render("◐ degraded")
+		}
+	} else {
+		statusStyled = statusErrStyle.Render("○ stopped")
+	}
+
+	daemonLines := []string{
+		fmt.Sprintf("%s %s", fieldStyle.Render("Status:"), statusStyled),
+		fmt.Sprintf("%s   %d (loopback)", fieldStyle.Render("Port:"), m.port),
+	}
+	if m.pid > 0 {
+		daemonLines = append(daemonLines, fmt.Sprintf("%s    %d", fieldStyle.Render("PID:"), m.pid))
+	}
+	if m.uptime != "" {
+		daemonLines = append(daemonLines, fmt.Sprintf("%s  %s", fieldStyle.Render("Uptime:"), m.uptime))
+	}
+	daemonInner := strings.Join(daemonLines, "\n")
+	b.WriteString(renderBox(daemonInner, m.width, boxSt))
 	b.WriteString("\n")
 
-	// Last read
+	// Last Read box (graceful placeholders for currently unpopulated fields).
 	lastReadStr := "(never)"
 	if m.lastRead != "" {
 		lastReadStr = m.lastRead
 	}
-	lastReadBox := fmt.Sprintf("  Last Read: %s\n  Format:    %s",
-		lastReadStr, m.lastFmt)
-	b.WriteString(boxStyle.Render(lastReadBox))
-	b.WriteString("\n")
-
-	// Clipboard Watch status (critical for visibility success criterion)
-	watchStr := "disabled (opt-in via [watch] enabled = true in config)"
-	if m.watchEnabled {
-		watchStr = "enabled (detecting OS changes)"
-		if m.lastClipboardChange != "" {
-			watchStr = "enabled (last change: " + m.lastClipboardChange + ")"
-		}
+	lastReadVal := lastReadStr
+	if lastReadStr == "(never)" {
+		lastReadVal = mutedStyle.Render("(never)")
 	}
-	b.WriteString(boxStyle.Render("  Clipboard Watch: " + watchStr))
+	fmtVal := m.lastFmt
+	if fmtVal == "" {
+		fmtVal = mutedStyle.Render("—")
+	}
+	lastReadInner := fmt.Sprintf("%s %s\n%s    %s",
+		fieldStyle.Render("Last Read:"), lastReadVal,
+		fieldStyle.Render("Format:"), fmtVal)
+	b.WriteString(renderBox(lastReadInner, m.width, boxSt))
 	b.WriteString("\n")
 
-	// Hosts
+	// Clipboard Watch box (two-line when change timestamp present for density;
+	// icons + colors make enabled/disabled state pop at a glance).
+	var watchInner string
+	watchLabel := fieldStyle.Render("Clipboard Watch:")
+	if m.watchEnabled {
+		if m.lastClipboardChange != "" {
+			watchInner = fmt.Sprintf("%s %s\n%s     %s",
+				watchLabel, statusOkStyle.Render("enabled"), fieldStyle.Render("Last change:"), m.lastClipboardChange)
+		} else {
+			watchInner = fmt.Sprintf("%s %s (detecting OS clipboard changes)",
+				watchLabel, statusOkStyle.Render("enabled"))
+		}
+	} else {
+		hint := mutedStyle.Render("Hint: (set [watch] enabled = true in config)")
+		watchInner = fmt.Sprintf("%s %s\n%s",
+			watchLabel, statusWarnStyle.Render("disabled"), hint)
+	}
+	b.WriteString(renderBox(watchInner, m.width, boxSt))
+	b.WriteString("\n")
+
+	// Hosts box (symbols for quick ok/unreachable scan; termius noted subtly).
 	if len(m.hosts) > 0 {
 		var hostLines []string
-		hostLines = append(hostLines, "  Hosts:")
+		hostLines = append(hostLines, fieldStyle.Render("Hosts:"))
 		for _, h := range m.hosts {
-			status := statusOkStyle.Render("ok")
+			statusDisp := statusOkStyle.Render("✓ ok")
 			if h.Status != "ok" {
-				status = statusErrStyle.Render(h.Status)
+				statusDisp = statusErrStyle.Render("✗ " + h.Status)
 			}
 			suffix := ""
 			if h.Termius {
-				suffix = " (termius)"
+				suffix = mutedStyle.Render(" (termius)")
 			}
-			hostLines = append(hostLines, fmt.Sprintf("    %s  %s%s", h.Alias, status, suffix))
+			hostLines = append(hostLines, fmt.Sprintf("  %s  %s%s", h.Alias, statusDisp, suffix))
 		}
-		b.WriteString(boxStyle.Render(strings.Join(hostLines, "\n")))
+		b.WriteString(renderBox(strings.Join(hostLines, "\n"), m.width, boxSt))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(boxStyle.Render("  Hosts: (none configured)"))
+		hostsInner := fmt.Sprintf("%s %s",
+			fieldStyle.Render("Hosts:"), mutedStyle.Render("(none configured)"))
+		b.WriteString(renderBox(hostsInner, m.width, boxSt))
 		b.WriteString("\n")
 	}
 
-	// Keyboard shortcuts
-	b.WriteString(dimStyle.Render("  [q] quit  "))
+	// Centered footer with highlighted key (calm, scannable).
+	footer := dimStyle.Render("[") + keyStyle.Render("q") + dimStyle.Render("] quit")
+	if m.width > 0 {
+		footer = lipgloss.PlaceHorizontal(m.width, lipgloss.Center, footer)
+	}
+	b.WriteString("\n")
+	b.WriteString(footer)
 	b.WriteString("\n")
 
 	return b.String()
@@ -206,6 +300,17 @@ func (m *Model) refresh() {
 		m.healthy = false
 		m.watchEnabled = false
 		m.lastClipboardChange = ""
+		// Rebuild hosts from config so the polished Hosts box shows trustworthy
+		// "✗ unreachable" instead of stale prior "ok" entries (pre-existing gap
+		// now visible due to always-rendered substantial cards).
+		m.hosts = m.hosts[:0]
+		for alias, h := range m.cfg.Hosts {
+			m.hosts = append(m.hosts, hostStatus{
+				Alias:   alias,
+				Status:  "unreachable",
+				Termius: h.Termius,
+			})
+		}
 		return
 	}
 	defer resp.Body.Close()
@@ -245,5 +350,6 @@ func (m *Model) refresh() {
 	}
 
 	// Try to read the last clipboard state from the daemon.
-	// We could add a /stats endpoint for this, but for now we leave it as-is.
+	// LastRead data is intentionally left unpopulated (no /stats endpoint yet);
+	// View renders graceful placeholders per polish requirements and non-goals.
 }
