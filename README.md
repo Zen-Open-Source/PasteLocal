@@ -69,8 +69,11 @@ make build
 - **TUI Dashboard** — Run `pastelocal` to see daemon status, hosts, and recent activity
 - **Doctor** — `pastelocal doctor --fix` automatically diagnoses and repairs most issues
 
+### Security & Privacy
+- **Concealed / Sensitive Clipboard Filtering**: When the clipboard watcher is enabled (`watch.enabled = true`), PasteLocal automatically skips items marked as secrets by password managers. On macOS this uses the standard `org.nspasteboard.ConcealedType` signal (the same one Raycast and other good clipboard managers respect). These items are never relayed to remotes. Explicit access returns error `CB1013`. The feature is on by default for safety. See `[watch.sensitive]` in RELAY.md for configuration and detector-failure logging.
+
 ### Experimental
-- **Multi-device Relay** — E2E encrypted clipboard sync without SSH tunnels (see below). Includes first-class protection against accidentally relaying secrets copied from password managers (macOS ConcealedType filtering, on by default with the watcher; see RELAY.md for CB1013 and detector-failure logging).
+- **Multi-device Relay** — E2E encrypted clipboard sync without SSH tunnels (see RELAY.md for full details, including sensitive clipboard filtering for password managers).
 
 ---
 
