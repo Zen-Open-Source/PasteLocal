@@ -47,6 +47,7 @@ var Registry = map[string]Error{
 	"CB1010": {Code: "CB1010", HTTPStatus: http.StatusForbidden, Message: "Content blocked by redaction rule", FixHint: "Clipboard content matches a redaction rule"},
 	"CB1011": {Code: "CB1011", HTTPStatus: http.StatusServiceUnavailable, Message: "Processor pipeline failed", FixHint: "Check processor configuration in config"},
 	"CB1012": {Code: "CB1012", HTTPStatus: http.StatusBadRequest, Message: "No text on clipboard", FixHint: "Copy some text first"},
+	"CB1013": {Code: "CB1013", HTTPStatus: http.StatusForbidden, Message: "Content filtered as sensitive / concealed", FixHint: "This clipboard item was marked as a secret by a password manager (ConcealedType) and was blocked for safety."},
 	"CB2001": {Code: "CB2001", HTTPStatus: http.StatusUnauthorized, Message: "Invalid auth token", FixHint: "Re-run `pastelocal add-host <host>` to sync the token."},
 	"CB2002": {Code: "CB2002", HTTPStatus: http.StatusUnauthorized, Message: "Missing auth token", FixHint: "Bug; report it"},
 	"CB2003": {Code: "CB2003", HTTPStatus: http.StatusForbidden, Message: "Insufficient permissions", FixHint: "Token does not have the required permission"},

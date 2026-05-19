@@ -146,3 +146,9 @@ func (r *WaylandReader) AvailableFormats(ctx context.Context) ([]string, error) 
 	}
 	return strings.Split(output, "\n"), nil
 }
+
+// IsConcealed reports false on Wayland (no first-class ConcealedType equivalent;
+// the regex redaction layer provides best-effort secret protection).
+func (r *WaylandReader) IsConcealed(ctx context.Context) (bool, error) {
+	return false, nil
+}

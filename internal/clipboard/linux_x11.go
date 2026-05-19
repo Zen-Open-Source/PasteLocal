@@ -158,3 +158,9 @@ func (r *X11Reader) AvailableFormats(ctx context.Context) ([]string, error) {
 	}
 	return strings.Split(output, "\n"), nil
 }
+
+// IsConcealed reports false on X11 (no first-class ConcealedType equivalent;
+// the regex redaction layer provides best-effort secret protection).
+func (r *X11Reader) IsConcealed(ctx context.Context) (bool, error) {
+	return false, nil
+}

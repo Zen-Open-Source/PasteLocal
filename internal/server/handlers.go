@@ -69,6 +69,30 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Step 3c: Sensitive/concealed filter (password manager safety net).
+	// Blocks explicit reads of items marked with ConcealedType etc.
+	// Performed before acquiring the read lock and before any Read* call so
+	// secret bytes are never materialized in the daemon for a filtered item.
+	if s.cfg.Watch.Sensitive.FilterConcealed {
+		concealed, cErr := s.reader.IsConcealed(r.Context())
+		if cErr != nil {
+			// Detector failure — log the full err (incl. stderr) for observability.
+			// Fail-open (treat as non-concealed) per spec threat model; the log
+			// ensures the (rare) risk of a missed filter is auditable.
+			if s.cfg.Watch.Sensitive.LogFilteredItems {
+				s.logger.Info("clipboard read: concealed detection failed (fail-open)", "err", cErr)
+			} else {
+				s.logger.Debug("clipboard read: concealed detection failed (fail-open)", "err", cErr)
+			}
+		} else if concealed {
+			if s.cfg.Watch.Sensitive.LogFilteredItems {
+				s.logger.Info("clipboard read: blocked concealed/sensitive item (ConcealedType)")
+			}
+			cliperr.WriteJSON(w, cliperr.New("CB1013"))
+			return
+		}
+	}
+
 	// Step 4: Read clipboard content with format detection.
 	s.mu.Lock()
 	content, readErr := s.reader.ReadContent(r.Context())

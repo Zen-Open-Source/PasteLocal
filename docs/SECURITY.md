@@ -29,6 +29,16 @@ brute-forcing is infeasible.
 token. SIGHUP triggers an immediate re-read; old tokens are rejected within
 seconds.
 
+**Accidental relay of password-manager secrets via the watcher.** When the
+local clipboard watcher + relay is enabled, every change is normally forwarded.
+PasteLocal now filters items that password managers (1Password etc.) explicitly
+mark with the platform "concealed" signal (`org.nspasteboard.ConcealedType` on
+macOS). Such items are dropped before any read, state update, or E2E upload.
+Explicit reads return the dedicated `CB1013` error. Detection failures are
+logged with error+stderr (Info/Debug per config) and fail open (accepting the
+small false-negative risk per the threat model in §8 of the spec). The guard is
+on by default (`[watch.sensitive] filter_concealed = true`).
+
 ## What We Don't Defend Against
 
 **A compromised remote host.** If an attacker has root on the remote, they

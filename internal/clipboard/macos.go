@@ -5,6 +5,7 @@ package clipboard
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 
@@ -127,4 +128,45 @@ func (r *macOSReader) AvailableFormats(ctx context.Context) ([]string, error) {
 		return []string{}, nil
 	}
 	return strings.Split(output, "\n"), nil
+}
+
+// IsConcealed detects the standard macOS "concealed" pasteboard type used by
+// password managers (1Password, etc.) to mark secrets. It uses osascript to
+// inspect the rich pasteboard type list (the same signal Raycast and other
+// managers respect). This is the core of the sensitive filtering feature.
+//
+// The AppleScript queries `(clipboard info)`. When a password manager has
+// written a secret, the output typically contains an entry such as:
+//   «class occt», <len>
+// or the modern UTI string "org.nspasteboard.ConcealedType".
+// The heuristic matches either form (case-insensitive substring for the UTI).
+func (r *macOSReader) IsConcealed(ctx context.Context) (bool, error) {
+	// AppleScript adapted to return a simple "true"/"false" string.
+	// Checks both the modern UTI name and the legacy 4-char code "occt".
+	script := `set infoList to (clipboard info) as list
+repeat with itemInfo in infoList
+	try
+		set typeCode to (item 1 of itemInfo)
+		set typeStr to typeCode as string
+		if typeStr contains "ConcealedType" or typeStr is "occt" or typeStr contains "occt" then
+			return true
+		end if
+	end try
+end repeat
+return false`
+
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-e", script) // absolute path (defends against PATH hijack, consistent with pbpaste usage)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		// Fail-open on detector failure (per spec threat model: false negatives
+		// are worse; we prefer to keep normal clipboard working). The wrapped
+		// error includes stderr so callers can log the full details (Info when
+		// log_filtered_items, else Debug) for auditability.
+		return false, fmt.Errorf("osascript clipboard info failed: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()))
+	}
+	out := strings.TrimSpace(stdout.String())
+	return out == "true", nil
 }

@@ -339,6 +339,34 @@ func (s *Server) startClipboardWatcher() {
 		sig := strings.Join(formats, ",")
 		now := time.Now().UTC()
 
+		// Concealed/sensitive filter (core of the feature).
+		// If the clipboard item carries the macOS ConcealedType (or equiv),
+		// skip entirely: do not read bytes, do not update state, do not push to relay.
+		// This is what allows safe use of watch + relay with password managers.
+		if s.cfg.Watch.Sensitive.FilterConcealed {
+			concealed, cErr := s.reader.IsConcealed(ctx)
+			if cErr != nil {
+				// Detector failure: log the full error (which includes captured
+				// stderr) at the level controlled by log_filtered_items. We still
+				// fail open (non-concealed) per the spec's "false negatives worse"
+				// guidance, but the log makes the risk visible and actionable.
+				if s.cfg.Watch.Sensitive.LogFilteredItems {
+					s.logger.Info("clipboard watcher: concealed detection failed (fail-open)", "err", cErr)
+				} else {
+					s.logger.Debug("clipboard watcher: concealed detection failed (fail-open)", "err", cErr)
+				}
+			} else if concealed {
+				lastFmtSig = sig // absorb so we don't re-evaluate the same item constantly
+				if s.cfg.Watch.Sensitive.LogFilteredItems {
+					s.logger.Info("clipboard watcher: filtered concealed clipboard item (ConcealedType/password manager secret)")
+				} else {
+					s.logger.Debug("clipboard watcher: filtered concealed item")
+				}
+				cancel()
+				continue
+			}
+		}
+
 		// Global debounce: ignore bursts.
 		if now.Sub(lastDetected) < watchDebounce {
 			lastFmtSig = sig

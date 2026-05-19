@@ -45,6 +45,44 @@ Run (or restart) `pastelocald`.
 
 Now clipboard changes on the laptop appear on all paired remotes within a few seconds (watcher + per-peer E2EE upload).
 
+## Sensitive / Concealed Clipboard Filtering (Password Manager Safety)
+
+When `watch.enabled = true` together with the relay, PasteLocal can automatically
+relay every clipboard change to your other devices. To prevent password managers
+(1Password, Bitwarden, etc.) from having their secrets relayed, the daemon
+respects the standard OS "concealed" signal:
+
+* On **macOS**: items written with `org.nspasteboard.ConcealedType` (the same
+  marker Raycast, Paste, and Maccy use) are **skipped entirely** by the watcher
+  and never uploaded. The signature is absorbed so the item does not cause
+  repeated processing.
+* Explicit `GET /clipboard` (or `pastelocal-remote` without `--watch`) for a
+  currently-concealed item returns error **CB1013** ("Content filtered as
+  sensitive / concealed") with a clear fix hint. The secret bytes are never
+  materialised in the daemon or sent over the wire.
+
+```toml
+[watch]
+enabled = true
+
+[watch.sensitive]
+filter_concealed = true      # default
+log_filtered_items = true    # shows in logs when something was filtered
+```
+
+The feature is **on by default** (safe) the moment you enable the watcher. Set
+`filter_concealed = false` only if you have a very specific reason and accept
+the risk. No secrets ever leave the machine unless you deliberately disable the
+guard.
+
+Detection failures (e.g. osascript problems) are logged (Info when
+`log_filtered_items`, else Debug) with the full error+stderr; the item is
+treated as non-concealed (fail-open) per the documented threat model. See
+CB1013 for the explicit-read error case.
+
+See also SECURITY.md for the threat-model rationale and ERROR_CODES.md (via the
+registry in `internal/errors/codes.go`) for the exact CB1013 contract.
+
 ## Commands
 
 - `pastelocal relay init` — create X25519 device keypair (0600)

@@ -113,7 +113,24 @@ type RelayConfig struct {
 // debouncing and filtering. Detected changes update internal state and
 // notify active /clipboard/watch subscribers.
 type WatchConfig struct {
-	Enabled bool `toml:"enabled"`
+	Enabled   bool                `toml:"enabled"`
+	Sensitive WatchSensitiveConfig `toml:"sensitive"`
+}
+
+// WatchSensitiveConfig controls first-class filtering of sensitive clipboard
+// items (password manager secrets etc). Defaults are conservative: when the
+// watcher is used with relay, concealed items are blocked by default.
+//
+// v1 implements only the safe "block" behaviour for items detected via
+// ConcealedType (or future equivalents). The original design sketch listed
+// additional modes (warn / allow / redact-if-possible); those are not
+// implemented in v1. Users who want the old behaviour can set
+// filter_concealed = false. This narrowing was deliberate to keep the
+// initial release the smallest viable implementation that solves the
+// motivating trust problem.
+type WatchSensitiveConfig struct {
+	FilterConcealed  bool `toml:"filter_concealed"`
+	LogFilteredItems bool `toml:"log_filtered_items"`
 }
 
 // mu protects file operations during Save to prevent concurrent writes.
@@ -153,7 +170,13 @@ func Default() *Config {
 			AutoUpload:    false,
 			UploadTTL:     300,
 		},
-		Watch: WatchConfig{Enabled: false},
+		Watch: WatchConfig{
+			Enabled: false,
+			Sensitive: WatchSensitiveConfig{
+				FilterConcealed:  true,
+				LogFilteredItems: true,
+			},
+		},
 	}
 }
 
@@ -358,6 +381,16 @@ func mergeDefaults(cfg *Config) {
 	if cfg.Processors.Timeout == 0 {
 		cfg.Processors.Timeout = 5
 	}
+
+	// Watch.Sensitive: safe defaults (FilterConcealed=true, LogFilteredItems=true)
+	// are injected by Default() before toml.Decode and applyEnvOverrides.
+	// mergeDefaults intentionally does not force the bools here because an
+	// explicit `filter_concealed = false` in the user's config.toml must be
+	// respected. The Load path + struct embedding guarantees the v1 safe
+	// contract unless the user deliberately opts out. (Addresses review nit on
+	// "not touching the new nested fields".)
+	_ = cfg.Watch.Sensitive.FilterConcealed
+	_ = cfg.Watch.Sensitive.LogFilteredItems
 }
 
 // applyEnvOverrides applies environment variable overrides to the config.

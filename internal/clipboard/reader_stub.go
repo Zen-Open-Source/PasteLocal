@@ -37,3 +37,8 @@ func (r *unsupportedReader) AvailableFormats(ctx context.Context) ([]string, err
 	return nil, cliperr.NewWithMessage("CB1002",
 		"clipboard reading is not supported on this platform")
 }
+
+// IsConcealed returns false (no detection possible) on unsupported platforms.
+func (r *unsupportedReader) IsConcealed(ctx context.Context) (bool, error) {
+	return false, nil
+}

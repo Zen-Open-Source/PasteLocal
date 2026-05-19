@@ -39,3 +39,9 @@ func (r *linuxDefaultReader) AvailableFormats(ctx context.Context) ([]string, er
 	return nil, cliperr.NewWithMessage("CB1002",
 		"no display server selected; rebuild with -tags wayland or -tags x11")
 }
+
+// IsConcealed reports false on Linux (no first-class ConcealedType equivalent;
+// the regex redaction layer provides best-effort secret protection).
+func (r *linuxDefaultReader) IsConcealed(ctx context.Context) (bool, error) {
+	return false, nil
+}

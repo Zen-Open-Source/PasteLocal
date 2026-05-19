@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/pastelocal/pastelocal/internal/auth"
+	"github.com/pastelocal/pastelocal/internal/clipboard"
 	"github.com/pastelocal/pastelocal/internal/config"
 )
 
@@ -74,6 +75,25 @@ type threatReader struct {
 
 func (m *threatReader) ReadImage(_ context.Context) ([]byte, error) {
 	return m.image, m.err
+}
+
+func (m *threatReader) ReadContent(ctx context.Context) (*clipboard.Content, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &clipboard.Content{Data: m.image, Format: "png"}, nil
+}
+
+func (m *threatReader) ReadText(ctx context.Context) (string, error) {
+	return "", nil
+}
+
+func (m *threatReader) AvailableFormats(ctx context.Context) ([]string, error) {
+	return []string{"image/png"}, nil
+}
+
+func (m *threatReader) IsConcealed(ctx context.Context) (bool, error) {
+	return false, nil
 }
 
 // newThreatServer creates a Server with a temp token file and returns the

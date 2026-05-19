@@ -70,7 +70,7 @@ make build
 - **Doctor** — `pastelocal doctor --fix` automatically diagnoses and repairs most issues
 
 ### Experimental
-- **Multi-device Relay** — E2E encrypted clipboard sync without SSH tunnels (see below)
+- **Multi-device Relay** — E2E encrypted clipboard sync without SSH tunnels (see below). Includes first-class protection against accidentally relaying secrets copied from password managers (macOS ConcealedType filtering, on by default with the watcher; see RELAY.md for CB1013 and detector-failure logging).
 
 ---
 

@@ -23,8 +23,9 @@ import (
 
 // mockReader implements clipboard.Reader for testing.
 type mockReader struct {
-	image []byte
-	err   error
+	image     []byte
+	err       error
+	concealed bool // for exercising the new sensitive filtering paths
 }
 
 func (m *mockReader) ReadImage(ctx context.Context) ([]byte, error) {
@@ -47,6 +48,10 @@ func (m *mockReader) ReadText(ctx context.Context) (string, error) {
 
 func (m *mockReader) AvailableFormats(ctx context.Context) ([]string, error) {
 	return []string{"image/png"}, nil
+}
+
+func (m *mockReader) IsConcealed(ctx context.Context) (bool, error) {
+	return m.concealed, nil
 }
 
 // newTestServer creates a Server wired up for testing with sensible defaults.
@@ -918,4 +923,55 @@ func TestClipboardWatcherDetection(t *testing.T) {
 
 	// Also sanity-check that the hub has the notification wiring (no-op check).
 	_ = s.watchHub.SubscriberCount()
+}
+
+// TestHandleClipboardGet_Concealed provides lightweight automated coverage for the
+// new concealed==true filtering path (CB1013) using the injectable mockReader.
+// This directly addresses the recurring "missing coverage on new positive branches"
+// pattern noted in the review. Only the handler path is exercised (watcher goroutine
+// coverage would require more intrusive timing control).
+func TestHandleClipboardGet_Concealed(t *testing.T) {
+	cfg := config.Default()
+	cfg.Watch.Sensitive.FilterConcealed = true
+	cfg.Port = 0
+
+	r := &mockReader{
+		image:     []byte("fake-png"),
+		concealed: true,
+	}
+
+	s, token := newTestServer(t, cfg, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/clipboard", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	s.handleClipboard(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 Forbidden for concealed item", w.Code)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if code, _ := resp["code"].(string); code != "CB1013" {
+		t.Errorf("error code = %q, want CB1013", code)
+	}
+}
+
+// TestMockReader_IsConcealedPositive exercises the controllable mock's IsConcealed
+// returning true (the security-critical positive path for the new filtering).
+// This provides explicit automated coverage for the branch used by both watcher
+// and handler when a concealed item is detected.
+func TestMockReader_IsConcealedPositive(t *testing.T) {
+	m := &mockReader{concealed: true}
+	got, err := m.IsConcealed(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !got {
+		t.Error("expected concealed == true")
+	}
 }

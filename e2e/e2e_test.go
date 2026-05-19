@@ -120,6 +120,10 @@ func (r *stubReader) AvailableFormats(ctx context.Context) ([]string, error) {
 	return []string{"image/png"}, nil
 }
 
+func (r *stubReader) IsConcealed(ctx context.Context) (bool, error) {
+	return false, nil
+}
+
 // doRequest performs an authenticated HTTP request.
 func (h *testHarness) doRequest(method, path string, body io.Reader) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, body)
