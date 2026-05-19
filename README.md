@@ -72,6 +72,17 @@ make build
 ### Security & Privacy
 - **Concealed / Sensitive Clipboard Filtering**: When the clipboard watcher is enabled (`watch.enabled = true`), PasteLocal automatically skips items marked as secrets by password managers. On macOS this uses the standard `org.nspasteboard.ConcealedType` signal (the same one Raycast and other good clipboard managers respect). These items are never relayed to remotes. Explicit access returns error `CB1013`. The feature is on by default for safety. See `[watch.sensitive]` in RELAY.md for configuration and detector-failure logging.
 
+- **VisionPaste / Intelligent Screenshot Context (v1)**: Optional local analysis pipeline (`[vision]` in config.toml) that runs external commands (tesseract etc.) on screenshots **at explicit read time** on the serving daemon. Produces OCR text + descriptions included in `/clipboard` (and `/clipboard/history/{id}`) responses and written as `.analysis.txt` sidecars by `pastelocal-remote`. Skills present the rich text first. 
+  - v1 limitations (by design, per scoped plan): Analysis is demand-driven on read (not pre-computed in watcher goroutine); relay carries raw bytes only; history stores raw bytes (re-analysis occurs on history fetch if still present on source clipboard). Concealed items never analyzed.
+  Configure example:
+  ```toml
+  [vision]
+  enabled = true
+  [[vision.chain]]
+  name = "ocr"
+  command = "tesseract - - 2>/dev/null || true"
+  ```
+
 ### Experimental
 - **Multi-device Relay** — E2E encrypted clipboard sync without SSH tunnels (see RELAY.md for full details, including sensitive clipboard filtering for password managers).
 

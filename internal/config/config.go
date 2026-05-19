@@ -40,6 +40,7 @@ type Config struct {
 	History            HistoryConfig   `toml:"history"`
 	Redaction          RedactionConfig `toml:"redaction"`
 	Processors         ProcessorConfig `toml:"processors"`
+	Vision             VisionConfig    `toml:"vision"`
 	Relay              RelayConfig     `toml:"relay"`
 	Watch              WatchConfig     `toml:"watch"`
 }
@@ -94,6 +95,23 @@ type ProcessorConfig struct {
 type ProcessorEntry struct {
 	Name    string `toml:"name"`
 	Command string `toml:"command"`
+}
+
+// VisionConfig controls the VisionPaste / intelligent screenshot analysis pipeline (v1).
+// When enabled, image clipboard content is passed through external analysis commands
+// (e.g. tesseract for OCR) that produce text metadata (OCR, descriptions). The results
+// are returned in read responses and written as sidecars by pastelocal-remote for agent
+// consumption. Analysis is never run on concealed/sensitive items.
+type VisionConfig struct {
+	Enabled bool          `toml:"enabled"`
+	Timeout int           `toml:"timeout_seconds"`
+	Chain   []VisionEntry `toml:"chain"`
+}
+
+// VisionEntry represents one analysis step in the vision pipeline.
+type VisionEntry struct {
+	Name    string `toml:"name"`    // "ocr", "describe", etc. Determines which result field is populated.
+	Command string `toml:"command"` // Shell command: image bytes on stdin, text analysis on stdout.
 }
 
 // RelayConfig controls the E2E encrypted relay for multi-device sync.
@@ -160,6 +178,10 @@ func Default() *Config {
 		Processors: ProcessorConfig{
 			Enabled: false,
 			Timeout: 5,
+		},
+		Vision: VisionConfig{
+			Enabled: false,
+			Timeout: 15,
 		},
 		Relay: RelayConfig{
 			Enabled:       false,
@@ -380,6 +402,9 @@ func mergeDefaults(cfg *Config) {
 	}
 	if cfg.Processors.Timeout == 0 {
 		cfg.Processors.Timeout = 5
+	}
+	if cfg.Vision.Timeout == 0 {
+		cfg.Vision.Timeout = 15
 	}
 
 	// Watch.Sensitive: safe defaults (FilterConcealed=true, LogFilteredItems=true)

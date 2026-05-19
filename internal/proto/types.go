@@ -1,7 +1,7 @@
 package proto
 
 // ProtocolVersion is the current wire protocol version.
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 // ClipboardResponse is the JSON response for GET /clipboard on success.
 type ClipboardResponse struct {
@@ -12,6 +12,7 @@ type ClipboardResponse struct {
 	ByteCount  int64  `json:"byte_count"`
 	CapturedAt string `json:"captured_at"`  // RFC3339
 	ID         string `json:"id,omitempty"` // unique ID for history entries
+	Analysis   *ClipboardAnalysis `json:"analysis,omitempty"`
 }
 
 // ClipboardWriteRequest is the JSON request for POST /clipboard.
@@ -26,6 +27,14 @@ type ClipboardWriteResponse struct {
 	OK        bool   `json:"ok"`
 	Format    string `json:"format"`
 	ByteCount int64  `json:"byte_count"`
+}
+
+// ClipboardAnalysis carries optional rich context for images produced by the
+// VisionPaste analysis pipeline (OCR text, natural language description).
+// Populated only for png responses when vision analysis is configured and succeeds.
+type ClipboardAnalysis struct {
+	OCRText     string `json:"ocr_text,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // ErrorResponse is the JSON response for any error.

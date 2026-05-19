@@ -135,4 +135,10 @@ See [SECURITY.md](./SECURITY.md) for full threat model.
 
 Relay v1.0 completes the "Future Vision" section of the README. The core SSH path remains the recommended fast path; relay is the perfect fallback / multi-device / no-tunnel solution.
 
+VisionPaste (Intelligent Screenshot Context) is a complementary local-first feature (v1): when the daemon's `[vision]` pipeline is configured, screenshots served over the direct (SSH) read path (and history fetches) include rich OCR + description text in the `ClipboardResponse` and as a `.analysis.txt` sidecar written by `pastelocal-remote`. 
+
+**v1 scoping (intentional)**: Analysis is performed demand-driven at explicit read time on the serving daemon only (never inside the watcher goroutine or at push time, to keep the 2s poll fast). Relay carries raw bytes only. History responses carry Analysis on specific-entry fetches via on-demand re-analysis (storage remains raw bytes only; re-analysis happens if the screenshot is still on the source clipboard at fetch time). This resolves the plan's open question on watcher aggressiveness while delivering the highest-value path for agents. See README Features for config + full limitations, and the paste skills for agent UX.
+
+See README and the Grok/Claude paste skills for usage.
+
 Bugs / feedback: open an issue or PR.

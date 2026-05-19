@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/pastelocal/pastelocal/internal/clipboard"
@@ -121,4 +122,131 @@ func (p *ProcessorPipeline) runCommand(ctx context.Context, name, command string
 // StepCount returns the number of processor steps.
 func (p *ProcessorPipeline) StepCount() int {
 	return len(p.chain)
+}
+
+// --- VisionPaste analysis pipeline (v1) ---
+
+// AnalysisResult holds text metadata extracted from an image via the vision pipeline.
+type AnalysisResult struct {
+	OCRText     string
+	Description string
+}
+
+// AnalysisPipeline runs configured external commands to produce OCR / descriptions
+// from screenshot images. Commands receive PNG bytes on stdin and must emit
+// useful text on stdout. Results are best-effort; failures are logged and ignored
+// (fail-open) so that clipboard flow is never blocked by analysis.
+type AnalysisPipeline struct {
+	chain   []analysisStep
+	timeout time.Duration
+	logger  interface {
+		Error(string, ...interface{})
+		Warn(string, ...interface{})
+	}
+}
+
+type analysisStep struct {
+	name    string
+	command string
+}
+
+// NewAnalysisPipeline builds from config (parallel to NewProcessorPipeline).
+func NewAnalysisPipeline(cfg *config.Config, logger interface {
+	Error(string, ...interface{})
+	Warn(string, ...interface{})
+}) *AnalysisPipeline {
+	if !cfg.Vision.Enabled || len(cfg.Vision.Chain) == 0 {
+		return &AnalysisPipeline{timeout: time.Duration(cfg.Vision.Timeout) * time.Second, logger: logger}
+	}
+	timeout := time.Duration(cfg.Vision.Timeout) * time.Second
+	if timeout == 0 {
+		timeout = 15 * time.Second
+	}
+
+	var steps []analysisStep
+	for _, v := range cfg.Vision.Chain {
+		steps = append(steps, analysisStep{
+			name:    v.Name,
+			command: v.Command,
+		})
+	}
+	return &AnalysisPipeline{
+		chain:   steps,
+		timeout: timeout,
+		logger:  logger,
+	}
+}
+
+// Analyze runs the analysis chain on png content and returns collected results.
+// Returns nil if disabled, not an image, or no useful output produced.
+// Errors from individual steps are logged as warnings and skipped (fail-open).
+func (a *AnalysisPipeline) Analyze(ctx context.Context, content *clipboard.Content) *AnalysisResult {
+	if len(a.chain) == 0 || content == nil || content.Format != "png" || len(content.Data) == 0 {
+		return nil
+	}
+
+	res := &AnalysisResult{}
+	for _, step := range a.chain {
+		text, err := a.runTextCommand(ctx, step.name, step.command, content.Data)
+		if err != nil {
+			a.logger.Warn("analysis step failed, skipping", "step", step.name, "error", err)
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		// Map step name to result field. Unknown names go to OCRText with prefix.
+		switch strings.ToLower(step.name) {
+		case "ocr", "tesseract", "text", "extract":
+			if res.OCRText != "" {
+				res.OCRText += "\n"
+			}
+			res.OCRText += text
+		case "describe", "caption", "summary", "vision", "alt":
+			if res.Description != "" {
+				res.Description += " "
+			}
+			res.Description += text
+		default:
+			if res.OCRText != "" {
+				res.OCRText += "\n"
+			}
+			res.OCRText += step.name + ": " + text
+		}
+	}
+
+	if res.OCRText == "" && res.Description == "" {
+		return nil
+	}
+	return res
+}
+
+// runTextCommand executes a shell command with image data on stdin and returns
+// the stdout as text (analysis output). Mirrors the processor runCommand pattern
+// but for text-producing commands and with slightly longer default timeout.
+func (a *AnalysisPipeline) runTextCommand(ctx context.Context, name, command string, data []byte) (string, error) {
+	procCtx, cancel := context.WithTimeout(ctx, a.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(procCtx, "sh", "-c", command)
+	cmd.Stdin = bytes.NewReader(data)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("analysis %q failed: %w: %s", name, err, stderr.String())
+	}
+
+	result := strings.TrimSpace(stdout.String())
+	if result == "" {
+		return "", fmt.Errorf("analysis %q produced no output", name)
+	}
+	return result, nil
+}
+
+// AnalysisStepCount returns how many analysis steps are configured.
+func (a *AnalysisPipeline) AnalysisStepCount() int {
+	return len(a.chain)
 }

@@ -225,7 +225,9 @@ func TestHealthResponseSerialization(t *testing.T) {
 }
 
 func TestProtocolVersionConstant(t *testing.T) {
-	if ProtocolVersion != 2 {
-		t.Errorf("ProtocolVersion = %d, want 2", ProtocolVersion)
+	// Bumped to 3 for VisionPaste (additive Analysis field in ClipboardResponse).
+	// Use >= to tolerate future additive bumps without test churn.
+	if ProtocolVersion < 3 {
+		t.Errorf("ProtocolVersion = %d, want >= 3", ProtocolVersion)
 	}
 }

@@ -32,16 +32,18 @@ Bring your laptop's clipboard (especially screenshots) into a remote machine whe
 
 4. **Read the file** using your Read tool on the exact path returned.
 
-5. **Clean up**: Immediately run `rm <path>` (use Bash) so the temp file does not linger.
+5. **VisionPaste enrichment (new in v1)**: If the clipboard item was an image/screenshot and the local daemon has `[vision]` analysis configured (e.g. tesseract OCR), a companion sidecar file with the same base name but `.analysis.txt` suffix will exist next to the image (e.g. `...-abc123.analysis.txt`). Read it too — it contains pre-extracted OCR text and/or a natural-language description. Present this rich text context to the model *first* (before or alongside the image); it dramatically improves token efficiency and accuracy for code, errors, UI, diagrams etc. The image remains available via your vision capabilities for anything the text missed.
 
-6. **Confirm** with one short line:
+6. **Clean up**: Immediately run `rm <path>` and (if present) `rm <analysis-sidecar>` (use Bash) so temp files do not linger.
+
+7. **Confirm** with one short line:
    - Image: "Got it, image attached from your laptop clipboard."
    - Text: "Got it, text attached from your laptop clipboard."
    - If it came via relay: "Got it via relay, image attached."
 
 ## Tips for great UX
 - If the user has multiple devices paired via relay, you may need to ask "which one?" and use `--list`.
-- After attaching a screenshot, offer to analyze it, extract text, or describe it.
+- With VisionPaste enabled on the user's daemon, screenshots arrive with rich OCR + description context already attached — use it immediately instead of spending extra turns on vision analysis.
 - For repeated use, suggest the user saves a named snippet locally with `pastelocal snippets save my-design`.
 
 This skill is the Grok-native equivalent of the Claude `~/.claude/commands/paste.md`. It prefers the zero-config SSH experience when available.

@@ -156,6 +156,12 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 	s.lastReadFormat = content.Format
 	s.mu.Unlock()
 
+	// Step 5e: Run vision analysis pipeline (post-processors, post-unlock so we do not
+	// hold the read mutex during potentially slow external commands like tesseract).
+	// Only images; concealed items never reach here. Fail-open inside Analyze.
+	var analysis *AnalysisResult
+	analysis = s.analysis.Analyze(r.Context(), content)
+
 	// Step 6: Build response based on format.
 	resp := proto.ClipboardResponse{
 		OK:         true,
@@ -168,6 +174,13 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 		resp.Image = base64.StdEncoding.EncodeToString(content.Data)
 	} else {
 		resp.Text = string(content.Data)
+	}
+
+	if analysis != nil {
+		resp.Analysis = &proto.ClipboardAnalysis{
+			OCRText:     analysis.OCRText,
+			Description: analysis.Description,
+		}
 	}
 
 	// Step 7: Add to history if enabled.
@@ -403,6 +416,25 @@ func (s *Server) handleClipboardHistory(w http.ResponseWriter, r *http.Request) 
 			resp.Image = base64.StdEncoding.EncodeToString(data)
 		} else {
 			resp.Text = string(data)
+		}
+
+		// VisionPaste: demand-driven re-analysis on history fetch (explicit read of
+		// historical bytes). Keeps history storage unchanged (raw only) while still
+		// delivering rich context + sidecar for agents using --list/--index.
+		// Only runs if vision enabled; fail-open.
+		//
+		// Note: intentionally operates on stored historical bytes and therefore
+		// skips the live IsConcealed + redaction + processor gates that protect
+		// the primary /clipboard read path (those checks are impossible on past data).
+		// Historical entries were already vetted at original capture time.
+		if entry.Format == "png" {
+			tmp := &clipboard.Content{Data: data, Format: entry.Format}
+			if ar := s.analysis.Analyze(r.Context(), tmp); ar != nil {
+				resp.Analysis = &proto.ClipboardAnalysis{
+					OCRText:     ar.OCRText,
+					Description: ar.Description,
+				}
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -975,3 +975,43 @@ func TestMockReader_IsConcealedPositive(t *testing.T) {
 		t.Error("expected concealed == true")
 	}
 }
+
+// TestClipboardReadWithVisionAnalysis provides lightweight integration coverage
+// for the VisionPaste enrichment path (Analysis field populated on image reads).
+// Uses a trivial echo-based vision command (no external deps) and asserts the
+// new Analysis sub-object appears in the JSON response. Addresses reviewer M3.
+func TestClipboardReadWithVisionAnalysis(t *testing.T) {
+	cfg := config.Default()
+	cfg.Vision.Enabled = true
+	cfg.Vision.Timeout = 2
+	cfg.Vision.Chain = []config.VisionEntry{
+		{Name: "ocr", Command: "printf 'fake-ocr-from-handler'"},
+	}
+	cfg.Port = 0
+
+	r := &mockReader{image: []byte("fake-png-bytes-for-vision")}
+	s, token := newTestServer(t, cfg, r)
+
+	req := httptest.NewRequest(http.MethodGet, "/clipboard", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	s.handleClipboard(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	analysis, ok := resp["analysis"].(map[string]any)
+	if !ok || analysis == nil {
+		t.Fatalf("analysis field missing or null in response; got %v", resp["analysis"])
+	}
+	if ocr, _ := analysis["ocr_text"].(string); ocr != "fake-ocr-from-handler" {
+		t.Errorf("analysis.ocr_text = %q, want 'fake-ocr-from-handler'", ocr)
+	}
+}

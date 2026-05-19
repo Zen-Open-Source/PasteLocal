@@ -171,6 +171,26 @@ func run(port int, outDir string, timeout time.Duration, tokenFile string, sendP
 			fmt.Fprintf(os.Stderr, "error resolving absolute path: %v\n", err)
 			return 10
 		}
+
+		// VisionPaste v1: if the daemon provided analysis (OCR/description), write a
+		// lightweight sidecar next to the image so the agent skill can present rich
+		// text context first without extra vision calls. Sidecar is best-effort.
+		if clipResp.Analysis != nil {
+			var analysisText string
+			if clipResp.Analysis.OCRText != "" {
+				analysisText += "OCR Text:\n" + clipResp.Analysis.OCRText + "\n\n"
+			}
+			if clipResp.Analysis.Description != "" {
+				analysisText += "Description:\n" + clipResp.Analysis.Description + "\n"
+			}
+			if analysisText != "" {
+				analysisPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".analysis.txt"
+				if writeErr := os.WriteFile(analysisPath, []byte(analysisText), 0o600); writeErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to write analysis sidecar %s: %v\n", analysisPath, writeErr)
+				}
+			}
+		}
+
 		fmt.Println(absPath)
 
 	case "text":
@@ -610,6 +630,26 @@ func runHistoryFetch(client *http.Client, baseURL, token, outDir string, index i
 			fmt.Fprintf(os.Stderr, "error resolving absolute path: %v\n", err)
 			return 10
 		}
+
+		// VisionPaste v1: mirror sidecar logic for history fetches (when daemon
+		// populates Analysis on /history/{id} responses). Keeps agent experience
+		// consistent for --list + --index usage.
+		if clipResp.Analysis != nil {
+			var analysisText string
+			if clipResp.Analysis.OCRText != "" {
+				analysisText += "OCR Text:\n" + clipResp.Analysis.OCRText + "\n\n"
+			}
+			if clipResp.Analysis.Description != "" {
+				analysisText += "Description:\n" + clipResp.Analysis.Description + "\n"
+			}
+			if analysisText != "" {
+				analysisPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".analysis.txt"
+				if writeErr := os.WriteFile(analysisPath, []byte(analysisText), 0o600); writeErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to write analysis sidecar %s: %v\n", analysisPath, writeErr)
+				}
+			}
+		}
+
 		fmt.Println(absPath)
 
 	case "text":

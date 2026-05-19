@@ -47,6 +47,7 @@ type Server struct {
 	history             *HistoryBuffer
 	redaction           *RedactionEngine
 	processors          *ProcessorPipeline
+	analysis            *AnalysisPipeline
 	watchHub            *WatchHub
 	watcherStop         chan struct{} // for graceful Shutdown of the always-running watcher
 	httpServer          *http.Server
@@ -68,6 +69,7 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 		rateLimiter: NewRateLimiter(cfg.RateLimitPerMinute),
 		redaction:   NewRedactionEngine(cfg),
 		processors:  NewProcessorPipeline(cfg, logger),
+		analysis:    NewAnalysisPipeline(cfg, logger),
 		watchHub:    NewWatchHub(logger),
 	}
 
@@ -205,8 +207,12 @@ func (s *Server) reloadConfig() {
 	}
 	s.cfg = cfg
 	s.rateLimiter = NewRateLimiter(cfg.RateLimitPerMinute)
+	// Note: unsynchronized pointer replacement (pre-existing pattern for
+	// redaction/processors/analysis). Data race on SIGHUP possible during
+	// in-flight requests. Accepted as wontfix for scoped v1.
 	s.redaction = NewRedactionEngine(cfg)
 	s.processors = NewProcessorPipeline(cfg, s.logger)
+	s.analysis = NewAnalysisPipeline(cfg, s.logger)
 	s.watchEnabled.Store(cfg.Watch.Enabled)
 	s.watcherStop = make(chan struct{})
 	if cfg.History.Enabled && s.history == nil {

@@ -118,3 +118,78 @@ func TestProcessorPipelineWriteDirection(t *testing.T) {
 		t.Errorf("ProcessWrite error: %v", err)
 	}
 }
+
+// --- AnalysisPipeline (VisionPaste) tests ---
+
+func TestAnalysisPipelineDisabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.Vision.Enabled = false
+	a := NewAnalysisPipeline(cfg, &mockLogger{})
+
+	if a.AnalysisStepCount() != 0 {
+		t.Errorf("AnalysisStepCount() = %d, want 0", a.AnalysisStepCount())
+	}
+
+	content := &clipboard.Content{Data: []byte("fake-png"), Format: "png"}
+	res := a.Analyze(context.Background(), content)
+	if res != nil {
+		t.Errorf("expected nil result when disabled, got %+v", res)
+	}
+}
+
+func TestAnalysisPipelineNoOutputForText(t *testing.T) {
+	cfg := config.Default()
+	cfg.Vision.Enabled = true
+	cfg.Vision.Chain = []config.VisionEntry{{Name: "ocr", Command: "echo ocr-text"}}
+	a := NewAnalysisPipeline(cfg, &mockLogger{})
+
+	content := &clipboard.Content{Data: []byte("some text"), Format: "text"}
+	res := a.Analyze(context.Background(), content)
+	if res != nil {
+		t.Errorf("expected nil for non-png, got %+v", res)
+	}
+}
+
+func TestAnalysisPipelineRunsOnPng(t *testing.T) {
+	cfg := config.Default()
+	cfg.Vision.Enabled = true
+	cfg.Vision.Chain = []config.VisionEntry{
+		{Name: "ocr", Command: "printf 'line1\nline2'"},
+		{Name: "describe", Command: "echo 'a ui screenshot'"},
+	}
+	a := NewAnalysisPipeline(cfg, &mockLogger{})
+
+	content := &clipboard.Content{Data: []byte{0x89, 0x50, 0x4e, 0x47}, Format: "png"}
+	res := a.Analyze(context.Background(), content)
+	if res == nil {
+		t.Fatalf("expected analysis result")
+	}
+	if res.OCRText != "line1\nline2" {
+		t.Errorf("OCRText = %q, want %q", res.OCRText, "line1\nline2")
+	}
+	if res.Description != "a ui screenshot" {
+		t.Errorf("Description = %q, want %q", res.Description, "a ui screenshot")
+	}
+}
+
+func TestAnalysisPipelineFailOpen(t *testing.T) {
+	cfg := config.Default()
+	cfg.Vision.Enabled = true
+	cfg.Vision.Chain = []config.VisionEntry{
+		{Name: "ocr", Command: "false"}, // fails
+		{Name: "describe", Command: "echo 'still works'"},
+	}
+	a := NewAnalysisPipeline(cfg, &mockLogger{})
+
+	content := &clipboard.Content{Data: []byte("pngdata"), Format: "png"}
+	res := a.Analyze(context.Background(), content)
+	if res == nil {
+		t.Fatal("expected partial result (fail-open on first step)")
+	}
+	if res.Description != "still works" {
+		t.Errorf("Description = %q, want 'still works'", res.Description)
+	}
+	if res.OCRText != "" {
+		t.Errorf("OCRText should be empty on failed step, got %q", res.OCRText)
+	}
+}
