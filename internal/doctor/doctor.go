@@ -47,6 +47,9 @@ func RunChecks(cfg *config.Config, fix bool) []CheckResult {
 	if cfg.Relay.Enabled {
 		results = append(results, checkRelayDeviceKey())
 		results = append(results, checkRelayToken())
+		results = append(results, checkRelayConnectivity(cfg))
+		results = append(results, checkRelayHasPeers(cfg))
+		results = append(results, checkRelayAutoUploadConsistent(cfg))
 	}
 	results = append(results, checkKeychainEntry(cfg))
 	results = append(results, checkClipboardTool(cfg))
@@ -68,6 +71,9 @@ func RunChecks(cfg *config.Config, fix bool) []CheckResult {
 		if cfg.Relay.Enabled {
 			results = append(results, checkRelayDeviceKey())
 			results = append(results, checkRelayToken())
+			results = append(results, checkRelayConnectivity(cfg))
+			results = append(results, checkRelayHasPeers(cfg))
+			results = append(results, checkRelayAutoUploadConsistent(cfg))
 		}
 		results = append(results, checkKeychainEntry(cfg))
 		results = append(results, checkClipboardTool(cfg))

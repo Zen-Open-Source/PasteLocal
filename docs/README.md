@@ -200,28 +200,23 @@ Snippets are stored in `~/.local/share/pastelocal/snippets/` as JSON files with:
 
 ---
 
-## Experimental: Multi-Device Relay
+## Multi-Device Relay (v1.0)
 
-PasteLocal includes experimental support for end-to-end encrypted clipboard sharing between multiple devices **without** requiring SSH tunnels.
+PasteLocal includes stable v1.0 support for end-to-end encrypted clipboard sharing between multiple devices **without** requiring SSH tunnels.
 
-**Current Status:** Experimental / Preview
+**Current Status:** v1.0 Stable
 
 ### What Currently Works
 - Device keypair generation and registration (`pastelocal relay init` + `pair`)
 - Peer management (`pastelocal relay add-peer`, `devices`)
-- Receiving clipboard content via `pastelocal-remote --relay <url>`
+- Receiving (and sending via daemon auto-upload) clipboard content via `pastelocal-remote --relay <url>` or `pastelocal relay send`
 - Proper E2E encryption using X25519 + AES-GCM
-
-### What Is Still In Progress
-- Reliable sending from the local daemon (auto-upload)
-- Background polling / notifications on the receiving side
-- Persistence (the relay server is currently in-memory only)
-- Full integration with the TUI and `pastelocal doctor`
+- File-backed persistence (relay server store) + daemon-driven auto-upload sending
 
 ### When to Use It
-Only use the relay for testing and non-critical workflows. The core SSH-based clipboard bridge (`pastelocal add-host` + `pastelocal-remote`) remains the recommended, stable experience.
+Use the relay for multi-device clipboard sync (laptop + multiple remotes/VMs) where direct SSH tunnels are impractical. The core SSH-based workflow remains excellent for single-host; relay is the stable production path for broader setups.
 
-We are actively working on completing the relay feature. Feedback and contributions are welcome.
+See docs/RELAY.md for quick start and `pastelocal grok install-skills` for agent support. Feedback and contributions welcome.
 
 ---
 

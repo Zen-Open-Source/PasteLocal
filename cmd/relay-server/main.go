@@ -15,14 +15,22 @@ import (
 	"time"
 
 	"github.com/pastelocal/pastelocal/internal/relay"
+	ratelimit "github.com/pastelocal/pastelocal/internal/server"
 )
 
 // Server is the relay server. All data is delegated to the RelayStore
 // (which may be file-backed for persistence or in-memory).
 type Server struct {
-	mu    sync.RWMutex
-	store *relay.RelayStore
+	mu       sync.RWMutex
+	store    *relay.RelayStore
+	limiters sync.Map // deviceID or "ip:<addr>" -> *ratelimit.RateLimiter (60/min per key)
 }
+
+// v1 production limits (enforced on both upload paths; inbox cap on peer uploads).
+const (
+	maxBlobSize       = 10 * 1024 * 1024 // 10MB for v1 (applied to base64 "data" field)
+	maxInboxPerDevice = 50               // prevent unbounded growth per receiver
+)
 
 func main() {
 	port := flag.String("port", "7332", "listen port")
@@ -80,9 +88,47 @@ func expandHome(path string) string {
 	return filepath.Join(home, path[1:])
 }
 
+// rateKeyFor returns a rate limit key (prefer deviceID for authed, else IP).
+func rateKeyFor(r *http.Request, deviceID string) string {
+	if deviceID != "" {
+		return "dev:" + deviceID
+	}
+	ip := r.Header.Get("X-Forwarded-For")
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	return "ip:" + ip
+}
+
+// checkRate returns (allowed, retryAfter). Creates per-key 60/min limiter on first use.
+func (s *Server) checkRate(key string) (bool, time.Duration) {
+	limIface, _ := s.limiters.LoadOrStore(key, ratelimit.NewRateLimiter(60))
+	lim := limIface.(*ratelimit.RateLimiter)
+	if lim.Allow() {
+		return true, 0
+	}
+	// Approximate retry (simple 1s min for v1; real impl could expose next token time)
+	return false, 1 * time.Second
+}
+
+// writeJSONError writes a consistent JSON error (used for rate limits + robustness).
+func writeJSONError(w http.ResponseWriter, httpStatus int, code, msg string, retryAfter time.Duration) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
+	body := map[string]any{
+		"ok":    false,
+		"error": msg,
+		"code":  code,
+	}
+	if retryAfter > 0 {
+		body["retry_after"] = retryAfter.String()
+	}
+	_ = json.NewEncoder(w).Encode(body)
+}
+
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 
@@ -92,12 +138,19 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Fingerprint string `json:"fingerprint"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "invalid JSON", 0)
 		return
 	}
 
 	if req.DeviceID == "" || req.PublicKey == "" {
-		http.Error(w, "missing device_id or public_key", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "missing device_id or public_key", 0)
+		return
+	}
+
+	// Rate limit (per-IP for unauthenticated register)
+	key := rateKeyFor(r, "")
+	if ok, retry := s.checkRate(key); !ok {
+		writeJSONError(w, http.StatusTooManyRequests, "RL001", "rate limit exceeded", retry)
 		return
 	}
 
@@ -139,14 +192,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 
 	// Auth check.
 	token := r.Header.Get("Authorization")
 	if token == "" || len(token) < 7 {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 	token = token[7:] // Remove "Bearer "
@@ -156,7 +209,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
+		return
+	}
+
+	// Rate limit per device
+	if ok, retry := s.checkRate("dev:" + deviceID); !ok {
+		writeJSONError(w, http.StatusTooManyRequests, "RL002", "rate limit exceeded", retry)
 		return
 	}
 
@@ -169,12 +228,17 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		TTL       int    `json:"ttl"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "invalid JSON", 0)
 		return
 	}
 
 	if req.DeviceID != deviceID {
-		http.Error(w, "device_id mismatch", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "device_id mismatch", 0)
+		return
+	}
+
+	if len(req.Data) > maxBlobSize {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "RL003", "blob exceeds max size (10MB)", 0)
 		return
 	}
 
@@ -210,14 +274,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 
 	// Extract device ID from path: /api/v1/download/{device_id}
 	deviceID := r.URL.Path[len("/api/v1/download/"):]
 	if deviceID == "" {
-		http.Error(w, "missing device_id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "missing device_id", 0)
 		return
 	}
 
@@ -226,7 +290,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "no data available", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "RL000", "no data available", 0)
 		return
 	}
 
@@ -235,7 +299,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "blob not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "RL000", "blob not found", 0)
 		return
 	}
 
@@ -251,14 +315,14 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 
 	// Auth check.
 	token := r.Header.Get("Authorization")
 	if token == "" || len(token) < 7 {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 	token = token[7:]
@@ -268,7 +332,7 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 
@@ -293,13 +357,13 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 // handleInboxList returns pending clips in the authenticated device's inbox.
 func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 
 	token := parseBearer(r.Header.Get("Authorization"))
 	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 
@@ -307,7 +371,7 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 	deviceID, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 
@@ -340,13 +404,13 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 // handleInboxFetch returns the encrypted blob for a specific sender in the inbox.
 func (s *Server) handleInboxFetch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 
 	token := parseBearer(r.Header.Get("Authorization"))
 	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 
@@ -354,13 +418,13 @@ func (s *Server) handleInboxFetch(w http.ResponseWriter, r *http.Request) {
 	deviceID, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 
 	senderID := strings.TrimPrefix(r.URL.Path, "/api/v1/inbox/")
 	if senderID == "" {
-		http.Error(w, "missing sender_device_id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "missing sender_device_id", 0)
 		return
 	}
 
@@ -370,7 +434,7 @@ func (s *Server) handleInboxFetch(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !hasSender || !hasBlob {
-		http.Error(w, "no data from that sender", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "RL000", "no data from that sender", 0)
 		return
 	}
 
@@ -485,24 +549,34 @@ func parseBearer(h string) string {
 // handleUploadTo uploads an encrypted blob into a specific receiver's inbox.
 func (s *Server) handleUploadTo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 	token := parseBearer(r.Header.Get("Authorization"))
 	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
+
+	// Rate + device extraction (simplified; full parse after)
+	// (rate check added after device resolution in body for accuracy)
 	s.mu.RLock()
 	senderID, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
+
+	// Rate limit per device
+	if ok, retry := s.checkRate("dev:" + senderID); !ok {
+		writeJSONError(w, http.StatusTooManyRequests, "RL001", "rate limit exceeded", retry)
+		return
+	}
+
 	receiverID := strings.TrimPrefix(r.URL.Path, "/api/v1/upload/")
 	if receiverID == "" {
-		http.Error(w, "missing receiver_device_id", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "missing receiver_device_id", 0)
 		return
 	}
 	var req struct {
@@ -514,13 +588,19 @@ func (s *Server) handleUploadTo(w http.ResponseWriter, r *http.Request) {
 		TTL       int    `json:"ttl"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "invalid JSON", 0)
 		return
 	}
 	if req.DeviceID != senderID {
-		http.Error(w, "device_id mismatch", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "device_id mismatch", 0)
 		return
 	}
+
+	if len(req.Data) > maxBlobSize {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "RL003", "blob exceeds max size (10MB)", 0)
+		return
+	}
+
 	blobID := generateBlobID()
 	blob := &relay.Blob{
 		ID:        blobID,
@@ -537,6 +617,21 @@ func (s *Server) handleUploadTo(w http.ResponseWriter, r *http.Request) {
 		s.store.Inbox[receiverID] = make(map[string]string)
 	}
 	s.store.Inbox[receiverID][senderID] = blobID
+	// Enforce inbox cap (drop oldest arbitrary entry for v1; keeps newest).
+	if len(s.store.Inbox[receiverID]) > maxInboxPerDevice {
+		for k := range s.store.Inbox[receiverID] {
+			if k != senderID {
+				delete(s.store.Inbox[receiverID], k)
+				break
+			}
+		}
+		if len(s.store.Inbox[receiverID]) > maxInboxPerDevice {
+			for k := range s.store.Inbox[receiverID] {
+				delete(s.store.Inbox[receiverID], k)
+				break
+			}
+		}
+	}
 	if dev, exists := s.store.Devices[senderID]; exists {
 		dev.LastSeen = time.Now()
 	}
@@ -550,20 +645,27 @@ func (s *Server) handleUploadTo(w http.ResponseWriter, r *http.Request) {
 // handlePeers supports GET (list my peers with pubkeys) and POST (add peer).
 func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "RL000", "method not allowed", 0)
 		return
 	}
 	token := parseBearer(r.Header.Get("Authorization"))
 	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
 	}
 	s.mu.RLock()
 	deviceID, ok := s.store.Tokens[token]
 	s.mu.RUnlock()
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "unauthorized", 0)
 		return
+	}
+	// Rate limit only on mutating POST (per plan + RL002 for abuse test).
+	if r.Method == http.MethodPost {
+		if ok, retry := s.checkRate("dev:" + deviceID); !ok {
+			writeJSONError(w, http.StatusTooManyRequests, "RL002", "rate limit exceeded", retry)
+			return
+		}
 	}
 	if r.Method == http.MethodGet {
 		s.mu.RLock()
@@ -586,18 +688,18 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 		PeerDeviceID string `json:"peer_device_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "RL000", "invalid JSON", 0)
 		return
 	}
 	if req.DeviceID != deviceID {
-		http.Error(w, "device_id mismatch", http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "RL000", "device_id mismatch", 0)
 		return
 	}
 	s.mu.RLock()
 	_, peerExists := s.store.Devices[req.PeerDeviceID]
 	s.mu.RUnlock()
 	if !peerExists {
-		http.Error(w, "peer device not found", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "RL000", "peer device not found", 0)
 		return
 	}
 	s.mu.Lock()

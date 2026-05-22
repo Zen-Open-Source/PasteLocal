@@ -81,7 +81,7 @@ gosec ./...
 - `cmd/pastelocal/` — Main CLI
 - `cmd/pastelocald/` — The daemon
 - `cmd/pastelocal-remote/` — Remote helper (small binary installed on remote hosts)
-- `cmd/relay-server/` — Experimental multi-device relay server
+- `cmd/relay-server/` — Relay server (v1.0 multi-device support)
 - `internal/server/` — Core daemon logic (handlers, history, snippets, redaction, etc.)
 - `internal/clipboard/` — Cross-platform clipboard access
 - `internal/crypto/` — X25519 + AES-GCM primitives (used by relay)
@@ -90,7 +90,7 @@ gosec ./...
 
 ## Notes on the Relay Feature
 
-The multi-device relay (`pastelocal relay ...` and the standalone relay server) is currently **experimental**. Contributions that improve stability, add persistence, or complete the send path are very welcome, but please coordinate first by opening an issue.
+The multi-device relay (`pastelocal relay ...` and the standalone relay server) is a stable v1.0 feature. Contributions that improve it (e.g. more robust rate limiting, additional transports) are very welcome — open an issue or PR.
 
 ## Questions?
 

@@ -1,7 +1,8 @@
 package proto
 
 // ProtocolVersion is the current wire protocol version.
-const ProtocolVersion = 3
+const ProtocolVersion = 4
+
 
 // ClipboardResponse is the JSON response for GET /clipboard on success.
 type ClipboardResponse struct {
@@ -53,6 +54,19 @@ type VersionResponse struct {
 	// Watch-related status (populated by daemon when clipboard watching is enabled).
 	WatchEnabled        bool   `json:"watch_enabled"`
 	LastClipboardChange string `json:"last_clipboard_change,omitempty"`
+	// Relay (v1.0) status for TUI + doctor (populated when [relay] enabled in config).
+	Relay *RelayInfo `json:"relay,omitempty"`
+}
+
+// RelayInfo mirrors the plan-specified sub-object for live relay dashboard/doctor data.
+type RelayInfo struct {
+	Enabled     bool   `json:"enabled"`
+	DeviceID    string `json:"device_id,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	PeerCount   int    `json:"peer_count"`
+	LastPush    string `json:"last_push,omitempty"`
+	RelayURL    string `json:"relay_url,omitempty"`
+	Healthy     bool   `json:"healthy"`
 }
 
 // HealthResponse is the JSON response for GET /health.
@@ -73,6 +87,24 @@ type HistoryEntry struct {
 type HistoryResponse struct {
 	OK    bool           `json:"ok"`
 	Items []HistoryEntry `json:"items"`
+}
+
+// SearchResult is a single ranked result from Recall v1 semantic search
+// (GET /clipboard/history/search). Score is cosine similarity (higher = better).
+// Preview is a short excerpt of the embedded text (content or VisionPaste analysis).
+type SearchResult struct {
+	ID         string  `json:"id"`
+	Score      float64 `json:"score"`
+	CapturedAt string  `json:"captured_at"`
+	Format     string  `json:"format"`
+	Preview    string  `json:"preview,omitempty"`
+}
+
+// SearchResponse is the JSON response for semantic history search.
+type SearchResponse struct {
+	OK      bool           `json:"ok"`
+	Results []SearchResult `json:"results"`
+	Query   string         `json:"query,omitempty"`
 }
 
 // WatchNotification is the JSON payload pushed over the WebSocket.

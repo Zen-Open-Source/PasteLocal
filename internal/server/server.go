@@ -48,11 +48,14 @@ type Server struct {
 	redaction           *RedactionEngine
 	processors          *ProcessorPipeline
 	analysis            *AnalysisPipeline
+	recall              *Embedder
 	watchHub            *WatchHub
 	watcherStop         chan struct{} // for graceful Shutdown of the always-running watcher
 	httpServer          *http.Server
 	relayClient         *relay.Client
 	relayKeyPair        *crypto.KeyPair
+	relayPeerCount      int
+	lastRelayPush       time.Time
 }
 
 // New creates a new Server. The Server will listen on the port specified in cfg,
@@ -70,6 +73,7 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 		redaction:   NewRedactionEngine(cfg),
 		processors:  NewProcessorPipeline(cfg, logger),
 		analysis:    NewAnalysisPipeline(cfg, logger),
+		recall:      NewEmbedder(cfg, logger),
 		watchHub:    NewWatchHub(logger),
 	}
 
@@ -116,6 +120,7 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 	mux.HandleFunc("/clipboard", s.handleClipboard)
 	mux.HandleFunc("/clipboard/history", s.handleClipboardHistory)
 	mux.HandleFunc("/clipboard/history/", s.handleClipboardHistory)
+	mux.HandleFunc("/clipboard/history/search", s.handleHistorySearch)
 	mux.HandleFunc("/clipboard/watch", s.handleWatch)
 	mux.HandleFunc("/snippets", s.handleSnippets)
 	mux.HandleFunc("/snippets/", s.handleSnippet)
@@ -177,6 +182,25 @@ func (s *Server) WatchStatus() (bool, time.Time) {
 	return s.watchEnabled.Load(), s.lastClipboardChange
 }
 
+// RelayStatus returns relay config + live stats (for /version, TUI, doctor).
+// Mirrors WatchStatus() exactly for pattern consistency (uses same mu).
+func (s *Server) RelayStatus() (enabled bool, url, devID, fp string, peerCount int, lastPush time.Time, healthy bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cfg == nil || !s.cfg.Relay.Enabled {
+		return false, "", "", "", 0, time.Time{}, false
+	}
+	url = s.cfg.Relay.RelayURL
+	healthy = s.relayClient != nil
+	if s.relayKeyPair != nil {
+		devID = s.relayKeyPair.DeviceID()
+		fp = s.relayKeyPair.Fingerprint()
+	}
+	peerCount = s.relayPeerCount
+	lastPush = s.lastRelayPush
+	return true, url, devID, fp, peerCount, lastPush, healthy
+}
+
 // handleSignals responds to OS signals.
 func (s *Server) handleSignals() {
 	sigCh := make(chan os.Signal, 1)
@@ -213,6 +237,7 @@ func (s *Server) reloadConfig() {
 	s.redaction = NewRedactionEngine(cfg)
 	s.processors = NewProcessorPipeline(cfg, s.logger)
 	s.analysis = NewAnalysisPipeline(cfg, s.logger)
+	s.recall = NewEmbedder(cfg, s.logger)
 	s.watchEnabled.Store(cfg.Watch.Enabled)
 	s.watcherStop = make(chan struct{})
 	if cfg.History.Enabled && s.history == nil {

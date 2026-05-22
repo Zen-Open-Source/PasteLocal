@@ -56,6 +56,7 @@ func init() {
 	rootCmd.AddGroup(&cobra.Group{ID: "daemon", Title: "Daemon Management"})
 	rootCmd.AddGroup(&cobra.Group{ID: "host", Title: "Host Management"})
 	rootCmd.AddGroup(&cobra.Group{ID: "diagnostic", Title: "Diagnostics"})
+	rootCmd.AddGroup(&cobra.Group{ID: "grok", Title: "Grok Integration"})
 }
 
 // fail prints a single-line error to stderr and returns an error for cobra.

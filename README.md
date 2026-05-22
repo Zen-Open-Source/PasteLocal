@@ -59,12 +59,13 @@ make build
 
 ### Integration with Agentic Coding Tools
 - `/paste` — Paste current clipboard
-- `/paste-history` — Choose from recent clipboard entries
+- `/paste-history` — Choose from recent clipboard entries (or use the new `/recall` skill for natural-language semantic search)
 - `/paste-snippet` — Recall saved named snippets
 - `/paste-send` — Send files from the remote machine back to your local clipboard
+- `/recall` — Natural language search over history (Recall v1)
 
 ### Productivity Tools
-- **Clipboard History** — Go back in time with `pastelocal-remote --list`
+- **Clipboard History** — Go back in time with `pastelocal-remote --list` or the powerful `--search "natural language query"` (Recall v1)
 - **Named Snippets** — Save frequently used text or images locally
 - **TUI Dashboard** — Run `pastelocal` to see daemon status, hosts, and recent activity
 - **Doctor** — `pastelocal doctor --fix` automatically diagnoses and repairs most issues
@@ -83,7 +84,19 @@ make build
   command = "tesseract - - 2>/dev/null || true"
   ```
 
-### Experimental
+- **Recall v1 (Natural Language History Search)**: Semantic search over clipboard history using user-supplied embedding commands (Ollama, local Python, etc.). Query with `pastelocal-remote --search "the docker error from last night"` or the `/recall` skill. Results are ranked by cosine similarity over text content (and VisionPaste OCR+description for screenshots — the killer combo). 
+  - Privacy: Concealed items are never embedded or returned. Embeddings live only in memory (lost on daemon restart in v1).
+  - Enable with a 3-line config block + one of the ready-made scripts in `docs/examples/`.
+  - Example (Ollama + nomic-embed-text, copy the script too):
+    ```toml
+    [recall]
+    enabled = true
+    timeout_seconds = 30
+    command = "python3 -u ~/.config/pastelocal/embed_ollama.py"
+    ```
+  - Then from any agent: `pastelocal-remote --search "..." --limit 5` and fetch winners with `--id <id>`.
+
+### Multi-Device Relay (v1.0)
 - **Multi-device Relay** — E2E encrypted clipboard sync without SSH tunnels (see RELAY.md for full details, including sensitive clipboard filtering for password managers).
 
 ---
@@ -150,6 +163,9 @@ This works reliably with most agentic coding tools.
 ```bash
 pastelocal-remote --list
 pastelocal-remote --list --index 3
+# or semantic search (requires [recall] enabled):
+pastelocal-remote --search "the stack trace from the failed test"
+pastelocal-remote --id <id-from-search>
 ```
 
 ### Named Snippets
@@ -209,7 +225,7 @@ size = 20
 ttl_seconds = 3600
 
 [relay]
-enabled = false                    # Experimental
+enabled = false                    # v1.0 stable (opt-in)
 relay_url = "http://localhost:7332"
 auto_upload = false
 ```

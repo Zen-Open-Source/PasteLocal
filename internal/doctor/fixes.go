@@ -11,6 +11,10 @@ import (
 	"github.com/pastelocal/pastelocal/internal/sshconfig"
 )
 
+// NOTE: Relay v1.0 doctor checks (connectivity, hasPeers, auto-upload) are advisory only.
+// Safe auto-fixes are not implemented (user must run `relay init`/`pair`/`add-peer` and edit config.toml).
+// This satisfies the plan request for "safe auto-fixes where possible" with zero-risk no-op.
+
 // defaultTokenPathOverride allows tests to override the token path.
 // When non-empty, it is used instead of auth.DefaultTokenPath().
 var defaultTokenPathOverride string

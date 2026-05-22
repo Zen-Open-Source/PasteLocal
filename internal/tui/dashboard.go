@@ -89,6 +89,14 @@ type Model struct {
 	height              int
 	quitting            bool
 	err                 error
+	// Relay v1.0 live fields (parsed from /version, rendered instead of placeholder).
+	relayEnabled     bool
+	relayURL         string
+	relayDeviceID    string
+	relayFingerprint string
+	relayPeerCount   int
+	relayLastPush    string
+	relayHealthy     bool
 }
 
 type hostStatus struct {
@@ -103,6 +111,7 @@ func NewModel(cfg *config.Config, cfgPath string) Model {
 		cfg:     cfg,
 		cfgPath: cfgPath,
 		port:    cfg.Port,
+		// relay* default to zero/false (placeholder path until daemon populates)
 	}
 }
 
@@ -253,8 +262,34 @@ func (m Model) View() string {
 	b.WriteString(renderBox(watchInner, m.width, boxSt))
 	b.WriteString("\n")
 
-	// Relay status (v1)
-	relayInner := fieldStyle.Render("Relay (E2E multi-device): ") + mutedStyle.Render("see `pastelocal relay status` (enable in [relay] section of config)")
+	// Relay (v1.0) box — rich live status (replaces prior placeholder at ~257).
+	// Reuses exact renderBox + field/status/muted styles + multi-line layout from watch/lastRead boxes.
+	var relayInner string
+	if m.relayEnabled {
+		peerStr := fmt.Sprintf("%d", m.relayPeerCount)
+		if m.relayPeerCount == 0 {
+			peerStr = mutedStyle.Render("0 (use `pastelocal relay add-peer`)")
+		}
+		lastStr := mutedStyle.Render("never")
+		if m.relayLastPush != "" {
+			lastStr = m.relayLastPush
+		}
+		healthyStr := statusOkStyle.Render("healthy")
+		if !m.relayHealthy {
+			healthyStr = statusWarnStyle.Render("unhealthy (run relay pair)")
+		}
+		relayInner = fmt.Sprintf("%s %s\n%s %s\n%s %s  %s %s\n%s %s  %s %s",
+			fieldStyle.Render("Relay (v1.0):"), healthyStr,
+			fieldStyle.Render("URL:"), mutedStyle.Render(m.relayURL),
+			fieldStyle.Render("Device FP:"), m.relayFingerprint,
+			fieldStyle.Render("Peers:"), peerStr,
+			fieldStyle.Render("Last push:"), lastStr,
+		)
+	} else {
+		hint := mutedStyle.Render("Hint: set [relay] enabled=true + `pastelocal relay pair`")
+		relayInner = fmt.Sprintf("%s %s\n%s",
+			fieldStyle.Render("Relay (v1.0):"), statusWarnStyle.Render("disabled"), hint)
+	}
 	b.WriteString(renderBox(relayInner, m.width, boxSt))
 	b.WriteString("\n")
 
@@ -350,6 +385,30 @@ func (m *Model) refresh() {
 			}
 			if lc, ok := verData["last_clipboard_change"].(string); ok {
 				m.lastClipboardChange = lc
+			}
+			// Parse relay v1.0 status (exact interface{} pattern as watch fields).
+			if r, ok := verData["relay"].(map[string]interface{}); ok {
+				if e, ok := r["enabled"].(bool); ok {
+					m.relayEnabled = e
+				}
+				if u, ok := r["relay_url"].(string); ok {
+					m.relayURL = u
+				}
+				if d, ok := r["device_id"].(string); ok {
+					m.relayDeviceID = d
+				}
+				if f, ok := r["fingerprint"].(string); ok {
+					m.relayFingerprint = f
+				}
+				if p, ok := r["peer_count"].(float64); ok { // JSON numbers decode as float64
+					m.relayPeerCount = int(p)
+				}
+				if l, ok := r["last_push"].(string); ok {
+					m.relayLastPush = l
+				}
+				if h, ok := r["healthy"].(bool); ok {
+					m.relayHealthy = h
+				}
 			}
 		}
 	}

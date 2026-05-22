@@ -2,24 +2,22 @@
 
 These are first-class Grok skills (SKILL.md + optional helpers) for using PasteLocal from inside Grok sessions on remote machines.
 
-## Installation (manual for v1)
-Copy the subdirectories into your Grok skills folder:
+## Installation
+Run from the PasteLocal source tree (or after cloning the repo):
 
 ```bash
-cp -r skill/grok/paste ~/.grok/skills/pastelocal-paste
-cp -r skill/grok/paste-send ~/.grok/skills/pastelocal-paste-send
-# ... repeat for history + relay variants
+pastelocal grok install-skills
 ```
 
-Then just say `/paste` or `/pastelocal-paste` (Grok will discover them).
+This copies all skills into `~/.grok/skills/pastelocal-*` so Grok discovers `/paste`, `/recall`, etc.
 
-A future `pastelocal install-grok-skills` command will automate this + register them.
+## Available Skills
+- `paste/` — the main one (read latest clipboard, supports SSH or relay)
+- `paste-send/` — push file back to laptop (supports relay send)
+- `paste-history/` — history list / search / fetch by id or index
+- `paste-snippet/` — fetch a named saved snippet
+- `recall/` — natural language semantic search over history (Recall v1)
 
-## Available Skills (to be completed by implementer)
-- `paste/` — the main one (read latest clipboard)
-- `paste-send/` — push file back to laptop
-- `paste-history/`
-- `paste-snippet/`
-- `paste-relay/` (explicit relay variants)
+No separate `paste-relay/` (redundant; the above skills document the `--relay` flag where relevant).
 
-See the main [RELAY_V1_IMPLEMENTATION_SPEC.md](../docs/RELAY_V1_IMPLEMENTATION_SPEC.md) for the full plan.
+See docs/RELAY.md and the individual SKILL.md files.

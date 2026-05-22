@@ -13,7 +13,9 @@ import (
 
 	"github.com/pastelocal/pastelocal/internal/auth"
 	"github.com/pastelocal/pastelocal/internal/config"
+	"github.com/pastelocal/pastelocal/internal/crypto"
 	"github.com/pastelocal/pastelocal/internal/hostinstall"
+	"github.com/pastelocal/pastelocal/internal/relay"
 	"github.com/pastelocal/pastelocal/internal/service"
 	"github.com/pastelocal/pastelocal/internal/sshconfig"
 )
@@ -702,4 +704,75 @@ func expandRelayPath(p string) string {
 		return filepath.Join(home, p[2:])
 	}
 	return p
+}
+
+// checkRelayConnectivity verifies the configured relay_url responds to /health (3s timeout).
+func checkRelayConnectivity(cfg *config.Config) CheckResult {
+	if !cfg.Relay.Enabled {
+		return CheckResult{Name: "Relay connectivity", Passed: true, Detail: "(disabled)"}
+	}
+	url := strings.TrimRight(cfg.Relay.RelayURL, "/") + "/health"
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return CheckResult{
+			Name:    "Relay connectivity",
+			Passed:  false,
+			Detail:  fmt.Sprintf("GET %s failed: %v", url, err),
+			FixHint: "Check relay_url in config; ensure relay-server running",
+			AutoFix: false,
+		}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return CheckResult{
+			Name:    "Relay connectivity",
+			Passed:  false,
+			Detail:  fmt.Sprintf("status %d from %s", resp.StatusCode, url),
+			FixHint: "Check relay-server logs / health",
+			AutoFix: false,
+		}
+	}
+	return CheckResult{Name: "Relay connectivity", Passed: true, Detail: fmt.Sprintf("OK (%s)", cfg.Relay.RelayURL)}
+}
+
+// checkRelayHasPeers uses the relay client (exact pattern from runRelayStatus) to verify >=1 peer.
+func checkRelayHasPeers(cfg *config.Config) CheckResult {
+	if !cfg.Relay.Enabled {
+		return CheckResult{Name: "Relay has peers", Passed: true, Detail: "(disabled)"}
+	}
+	keyPath := expandRelayPath("~/.config/pastelocal/device-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return CheckResult{Name: "Relay has peers", Passed: false, Detail: "no device key", FixHint: "pastelocal relay init", AutoFix: false}
+	}
+	kp, _ := crypto.LoadKeyPairFromBase64(string(keyData))
+	tokenPath := expandRelayPath("~/.config/pastelocal/relay-token")
+	token := ""
+	if td, err := os.ReadFile(tokenPath); err == nil {
+		token = strings.TrimSpace(string(td))
+	}
+	client := relay.NewClient(cfg.Relay.RelayURL, kp.DeviceID(), kp, token)
+	peers, err := client.ListPeers()
+	if err != nil || peers == nil || !peers.OK {
+		return CheckResult{Name: "Relay has peers", Passed: false, Detail: "list failed (pair?)", FixHint: "pastelocal relay pair <url> && add-peer both sides", AutoFix: false}
+	}
+	if len(peers.Peers) == 0 {
+		return CheckResult{Name: "Relay has peers", Passed: false, Detail: "0 peers", FixHint: "run `pastelocal relay add-peer <fp>` on both devices", AutoFix: false}
+	}
+	return CheckResult{Name: "Relay has peers", Passed: true, Detail: fmt.Sprintf("%d peers", len(peers.Peers))}
+}
+
+// checkRelayAutoUploadConsistent warns if auto_upload=true but watch disabled (risk of missed pushes).
+func checkRelayAutoUploadConsistent(cfg *config.Config) CheckResult {
+	if cfg.Relay.AutoUpload && !cfg.Watch.Enabled {
+		return CheckResult{
+			Name:    "Relay auto-upload consistent",
+			Passed:  false,
+			Detail:  "auto_upload=true but watch.enabled=false",
+			FixHint: "set watch.enabled=true (or disable auto_upload)",
+			AutoFix: false,
+		}
+	}
+	return CheckResult{Name: "Relay auto-upload consistent", Passed: true, Detail: "ok"}
 }

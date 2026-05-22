@@ -183,12 +183,41 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Step 6.5: Recall v1 embedding (after VisionPaste analysis so images get OCR+desc
+	// text for superior semantic search). Performed outside locks; external command
+	// can be slow. Fail-open: on error we still record to history (list works) but
+	// the entry simply won't have a vector and thus won't appear in --search results.
+	// Concealed items never reach this point (early CB1013 return).
+	var searchText string
+	var embedding []float64
+	if s.history != nil && s.recall != nil && s.recall.IsEnabled() {
+		if content.Format == "text" {
+			searchText = string(content.Data)
+		} else if analysis != nil {
+			parts := []string{}
+			if t := strings.TrimSpace(analysis.OCRText); t != "" {
+				parts = append(parts, t)
+			}
+			if d := strings.TrimSpace(analysis.Description); d != "" {
+				parts = append(parts, d)
+			}
+			searchText = strings.Join(parts, "\n\n")
+		}
+		if searchText != "" {
+			if vec, err := s.recall.Embed(r.Context(), searchText); err == nil && len(vec) > 0 {
+				embedding = vec
+			} else if err != nil {
+				s.logger.Warn("recall embed failed for history entry (item remains retrievable via --list only)", "err", err, "format", content.Format)
+			}
+		}
+	}
+
 	// Step 7: Add to history if enabled.
 	entryID := ""
 	if s.history != nil {
 		entryID = generateEntryID(now, content.Format)
 		resp.ID = entryID
-		s.history.Add(entryID, content.Format, content.Data)
+		s.history.Add(entryID, content.Format, content.Data, searchText, embedding, now)
 	}
 
 	// Step 8: Notify watchers.
@@ -372,9 +401,16 @@ func (s *Server) handleClipboardHistory(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Auth check.
-	if _, authErr := s.validateAuth(r); authErr != nil {
+	token, authErr := s.validateAuth(r)
+	if authErr != nil {
 		cliperr.WriteJSON(w, authErr)
 		return
+	}
+	if alias := s.identifyHost(token); alias != "" {
+		if !s.cfg.HostHasPermission(alias, "read") {
+			cliperr.WriteJSON(w, cliperr.New("CB2003"))
+			return
+		}
 	}
 
 	// Check if requesting a specific entry by ID (path: /clipboard/history/{id})
@@ -453,6 +489,95 @@ func (s *Server) handleClipboardHistory(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(resp)
 }
 
+// handleHistorySearch implements Recall v1: GET /clipboard/history/search?q=...&limit=N
+// Requires auth + read permission. Embeds the query using the same embedder used
+// for indexing, then delegates to HistoryBuffer.Search (cosine over in-memory vecs).
+// Only items captured while recall was active + successfully embedded are eligible.
+// Concealed items are excluded by construction. Returns ranked results or empty list
+// on any best-effort failure (never 5xx for recall problems).
+func (s *Server) handleHistorySearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Rate limit (addresses review gap on new search surface; mirrors main read path).
+	if !s.rateLimiter.Allow() {
+		w.Header().Set("Retry-After", "60")
+		cliperr.WriteJSON(w, cliperr.New("CB4001"))
+		return
+	}
+
+	// Auth + permission (exact same early path as history list for consistency).
+	token, authErr := s.validateAuth(r)
+	if authErr != nil {
+		cliperr.WriteJSON(w, authErr)
+		return
+	}
+	if alias := s.identifyHost(token); alias != "" {
+		if !s.cfg.HostHasPermission(alias, "read") {
+			cliperr.WriteJSON(w, cliperr.New("CB2003"))
+			return
+		}
+	}
+
+	if s.history == nil {
+		resp := proto.SearchResponse{OK: true, Results: []proto.SearchResult{}}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		q = r.URL.Query().Get("query")
+	}
+	q = strings.TrimSpace(q)
+	if q == "" {
+		// Empty query -> empty results (not an error).
+		resp := proto.SearchResponse{OK: true, Results: []proto.SearchResult{}}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	// Security: bound query length to mitigate DoS against the external embed command (unbounded q was flagged in review).
+	if len(q) > 4096 {
+		q = q[:4096]
+	}
+
+	limit := 5
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := fmt.Sscanf(l, "%d", &limit); err == nil && n == 1 {
+			if limit < 1 {
+				limit = 1
+			}
+			if limit > 20 {
+				limit = 20
+			}
+		}
+	}
+
+	var results []proto.SearchResult
+	if s.recall != nil && s.recall.IsEnabled() {
+		vec, err := s.recall.Embed(r.Context(), q)
+		if err != nil || len(vec) == 0 {
+			s.logger.Warn("recall search: failed to embed query (returning empty)", "err", err)
+		} else {
+			results = s.history.Search(vec, limit)
+		}
+	} else {
+		s.logger.Debug("recall search requested but recall not configured/enabled")
+	}
+
+	resp := proto.SearchResponse{
+		OK:      true,
+		Results: results,
+		Query:   q,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // handleHealth handles GET /health. No auth required.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -483,6 +608,21 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 		if enabled && !t.IsZero() {
 			resp.LastClipboardChange = t.Format(time.RFC3339)
 		}
+	}
+	// Populate relay v1.0 status (for TUI rich box + doctor checks).
+	if enabled, u, did, fp, pc, lp, h := s.RelayStatus(); enabled {
+		ri := &proto.RelayInfo{
+			Enabled:     true,
+			RelayURL:    u,
+			DeviceID:    did,
+			Fingerprint: fp,
+			PeerCount:   pc,
+			Healthy:     h,
+		}
+		if !lp.IsZero() {
+			ri.LastPush = lp.Format(time.RFC3339)
+		}
+		resp.Relay = ri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -550,6 +690,9 @@ func (s *Server) pushToRelayPeers(format string, data []byte) {
 		s.logger.Warn("relay push: list peers failed", "err", err)
 		return
 	}
+	s.mu.Lock()
+	s.relayPeerCount = len(peersResp.Peers)
+	s.mu.Unlock()
 	if !peersResp.OK || len(peersResp.Peers) == 0 {
 		return
 	}
@@ -573,6 +716,9 @@ func (s *Server) pushToRelayPeers(format string, data []byte) {
 		success++
 	}
 	if success > 0 {
+		s.mu.Lock()
+		s.lastRelayPush = time.Now()
+		s.mu.Unlock()
 		s.logger.Info("relay push: uploaded to peers", "peers", success, "format", format, "bytes", len(data))
 	}
 }
