@@ -97,6 +97,12 @@ type Model struct {
 	relayPeerCount   int
 	relayLastPush    string
 	relayHealthy     bool
+	// Vision v2 status (static note + doctor recommended; live would require /version extension).
+	visionStatus string
+	// Recall v2 live status (parsed from /version now that we extended the proto).
+	recallEnabled bool
+	recallDim     int
+	recallStatus  string
 }
 
 type hostStatus struct {
@@ -108,9 +114,11 @@ type hostStatus struct {
 // NewModel creates a new dashboard model.
 func NewModel(cfg *config.Config, cfgPath string) Model {
 	return Model{
-		cfg:     cfg,
-		cfgPath: cfgPath,
-		port:    cfg.Port,
+		cfg:          cfg,
+		cfgPath:      cfgPath,
+		port:         cfg.Port,
+		visionStatus: "see [vision] in config + `pastelocal doctor` (proactive v2)",
+		recallStatus: "disabled — set [recall] + embed command for --search magic",
 		// relay* default to zero/false (placeholder path until daemon populates)
 	}
 }
@@ -293,6 +301,35 @@ func (m Model) View() string {
 	b.WriteString(renderBox(relayInner, m.width, boxSt))
 	b.WriteString("\n")
 
+	// Vision v2 status box (proactive/cached analysis). Smallest addition; full live stats
+	// would require proto /version extension. Points user to doctor for 5+ checks.
+	visionInner := fmt.Sprintf("%s %s",
+		fieldStyle.Render("Vision (v2):"), mutedStyle.Render(m.visionStatus))
+	b.WriteString(renderBox(visionInner, m.width, boxSt))
+	b.WriteString("\n")
+
+	// Recall v2 box — semantic search status (now fully live thanks to /version extension).
+	var recallInner string
+	if m.recallEnabled {
+		dimStr := ""
+		if m.recallDim > 0 {
+			dimStr = fmt.Sprintf(" (%dd)", m.recallDim)
+		}
+		statusStr := statusOkStyle.Render("enabled" + dimStr)
+		if m.recallStatus != "" && !strings.Contains(m.recallStatus, "ready") {
+			statusStr = statusWarnStyle.Render(m.recallStatus)
+		}
+		recallInner = fmt.Sprintf("%s %s\n%s %s",
+			fieldStyle.Render("Recall (v2):"), statusStr,
+			fieldStyle.Render("Status:"), mutedStyle.Render(m.recallStatus))
+	} else {
+		hint := mutedStyle.Render("Hint: [recall] enabled=true + embed command (see docs/examples/)")
+		recallInner = fmt.Sprintf("%s %s\n%s",
+			fieldStyle.Render("Recall (v2):"), statusWarnStyle.Render("disabled"), hint)
+	}
+	b.WriteString(renderBox(recallInner, m.width, boxSt))
+	b.WriteString("\n")
+
 	// Hosts box (symbols for quick ok/unreachable scan; termius noted subtly).
 	if len(m.hosts) > 0 {
 		var hostLines []string
@@ -409,6 +446,16 @@ func (m *Model) refresh() {
 				if h, ok := r["healthy"].(bool); ok {
 					m.relayHealthy = h
 				}
+			}
+			// Recall v2 (flat scalars from our VersionResponse extension)
+			if e, ok := verData["recall_enabled"].(bool); ok {
+				m.recallEnabled = e
+			}
+			if d, ok := verData["recall_dim"].(float64); ok {
+				m.recallDim = int(d)
+			}
+			if st, ok := verData["recall_status"].(string); ok {
+				m.recallStatus = st
 			}
 		}
 	}

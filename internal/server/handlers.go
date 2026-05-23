@@ -158,9 +158,18 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 
 	// Step 5e: Run vision analysis pipeline (post-processors, post-unlock so we do not
 	// hold the read mutex during potentially slow external commands like tesseract).
-	// Only images; concealed items never reach here. Fail-open inside Analyze.
+	// v2: check watcher-populated cache first (by content hash) for instant result; only
+	// fall back to Analyze on miss. Fail-open, concealed never reach here.
 	var analysis *AnalysisResult
-	analysis = s.analysis.Analyze(r.Context(), content)
+	imgHash := fmt.Sprintf("%x", sha256.Sum256(content.Data))
+	if cached := s.lookupCachedAnalysis(imgHash); cached != nil {
+		analysis = cached
+	} else {
+		analysis = s.analysis.Analyze(r.Context(), content)
+		if analysis != nil {
+			s.cacheAnalysis(imgHash, analysis)
+		}
+	}
 
 	// Step 6: Build response based on format.
 	resp := proto.ClipboardResponse{
@@ -183,14 +192,22 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Step 6.5: Recall v1 embedding (after VisionPaste analysis so images get OCR+desc
+	// Recall v2 embedding (after VisionPaste analysis so images get OCR+desc
 	// text for superior semantic search). Performed outside locks; external command
 	// can be slow. Fail-open: on error we still record to history (list works) but
 	// the entry simply won't have a vector and thus won't appear in --search results.
 	// Concealed items never reach this point (early CB1013 return).
+	//
+	// Uses recallCache (content hash -> vec) for instant hits from the watcher or
+	// previous daemon run (restart survival, matching VisionPaste v2).
 	var searchText string
 	var embedding []float64
 	if s.history != nil && s.recall != nil && s.recall.IsEnabled() {
+		contentHash := fmt.Sprintf("%x", sha256.Sum256(content.Data))
+		if cached := s.lookupCachedRecallEmbedding(contentHash); len(cached) > 0 {
+			embedding = cached
+		}
+
 		if content.Format == "text" {
 			searchText = string(content.Data)
 		} else if analysis != nil {
@@ -203,9 +220,10 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 			}
 			searchText = strings.Join(parts, "\n\n")
 		}
-		if searchText != "" {
+		if searchText != "" && len(embedding) == 0 {
 			if vec, err := s.recall.Embed(r.Context(), searchText); err == nil && len(vec) > 0 {
 				embedding = vec
+				s.cacheRecallEmbedding(contentHash, vec)
 			} else if err != nil {
 				s.logger.Warn("recall embed failed for history entry (item remains retrievable via --list only)", "err", err, "format", content.Format)
 			}
@@ -218,6 +236,9 @@ func (s *Server) handleClipboardGet(w http.ResponseWriter, r *http.Request) {
 		entryID = generateEntryID(now, content.Format)
 		resp.ID = entryID
 		s.history.Add(entryID, content.Format, content.Data, searchText, embedding, now)
+		if analysis != nil {
+			s.history.SetAnalysis(entryID, analysis)
+		}
 	}
 
 	// Step 8: Notify watchers.
@@ -454,18 +475,29 @@ func (s *Server) handleClipboardHistory(w http.ResponseWriter, r *http.Request) 
 			resp.Text = string(data)
 		}
 
-		// VisionPaste: demand-driven re-analysis on history fetch (explicit read of
-		// historical bytes). Keeps history storage unchanged (raw only) while still
-		// delivering rich context + sidecar for agents using --list/--index.
-		// Only runs if vision enabled; fail-open.
+		// VisionPaste: analysis for history fetch. Prefers stored result (watcher-proactive
+		// or prior) for instant; falls back to on-demand. Analysis now stored with entries (v2).
+		// Only for png; fail-open. Historical entries already passed original filters.
 		//
 		// Note: intentionally operates on stored historical bytes and therefore
 		// skips the live IsConcealed + redaction + processor gates that protect
 		// the primary /clipboard read path (those checks are impossible on past data).
 		// Historical entries were already vetted at original capture time.
 		if entry.Format == "png" {
-			tmp := &clipboard.Content{Data: data, Format: entry.Format}
-			if ar := s.analysis.Analyze(r.Context(), tmp); ar != nil {
+			var ar *AnalysisResult
+			if s.history != nil {
+				if cached := s.history.GetAnalysis(entry.ID); cached != nil {
+					ar = cached
+				}
+			}
+			if ar == nil {
+				tmp := &clipboard.Content{Data: data, Format: entry.Format}
+				ar = s.analysis.Analyze(r.Context(), tmp)
+				if ar != nil && s.history != nil {
+					s.history.SetAnalysis(entry.ID, ar)
+				}
+			}
+			if ar != nil {
 				resp.Analysis = &proto.ClipboardAnalysis{
 					OCRText:     ar.OCRText,
 					Description: ar.Description,
@@ -489,7 +521,7 @@ func (s *Server) handleClipboardHistory(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(resp)
 }
 
-// handleHistorySearch implements Recall v1: GET /clipboard/history/search?q=...&limit=N
+// handleHistorySearch implements Recall v2 semantic search: GET /clipboard/history/search?q=...&limit=N
 // Requires auth + read permission. Embeds the query using the same embedder used
 // for indexing, then delegates to HistoryBuffer.Search (cosine over in-memory vecs).
 // Only items captured while recall was active + successfully embedded are eligible.
@@ -623,6 +655,17 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 			ri.LastPush = lp.Format(time.RFC3339)
 		}
 		resp.Relay = ri
+	}
+	// Recall v2 status (for TUI dashboard box + doctor checks).
+	if s.recall != nil && s.recall.IsEnabled() {
+		resp.RecallEnabled = true
+		if d := s.recall.Dim(); d > 0 {
+			resp.RecallDim = d
+		}
+		resp.RecallStatus = "ready"
+		if resp.RecallDim > 0 {
+			resp.RecallStatus = fmt.Sprintf("ready (%dd)", resp.RecallDim)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

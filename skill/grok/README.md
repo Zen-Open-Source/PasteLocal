@@ -16,7 +16,7 @@ This copies all skills into `~/.grok/skills/pastelocal-*` so Grok discovers `/pa
 - `paste-send/` — push file back to laptop (supports relay send)
 - `paste-history/` — history list / search / fetch by id or index
 - `paste-snippet/` — fetch a named saved snippet
-- `recall/` — natural language semantic search over history (Recall v1)
+- `recall/` — natural language semantic search over history (Recall v2)
 
 No separate `paste-relay/` (redundant; the above skills document the `--relay` flag where relevant).
 

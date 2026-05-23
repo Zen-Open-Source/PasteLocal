@@ -62,10 +62,10 @@ make build
 - `/paste-history` — Choose from recent clipboard entries (or use the new `/recall` skill for natural-language semantic search)
 - `/paste-snippet` — Recall saved named snippets
 - `/paste-send` — Send files from the remote machine back to your local clipboard
-- `/recall` — Natural language search over history (Recall v1)
+- `/recall` — Natural language search over history (Recall v2)
 
 ### Productivity Tools
-- **Clipboard History** — Go back in time with `pastelocal-remote --list` or the powerful `--search "natural language query"` (Recall v1)
+- **Clipboard History** — Go back in time with `pastelocal-remote --list` or the powerful `--search "natural language query"` (Recall v2)
 - **Named Snippets** — Save frequently used text or images locally
 - **TUI Dashboard** — Run `pastelocal` to see daemon status, hosts, and recent activity
 - **Doctor** — `pastelocal doctor --fix` automatically diagnoses and repairs most issues
@@ -73,7 +73,7 @@ make build
 ### Security & Privacy
 - **Concealed / Sensitive Clipboard Filtering**: When the clipboard watcher is enabled (`watch.enabled = true`), PasteLocal automatically skips items marked as secrets by password managers. On macOS this uses the standard `org.nspasteboard.ConcealedType` signal (the same one Raycast and other good clipboard managers respect). These items are never relayed to remotes. Explicit access returns error `CB1013`. The feature is on by default for safety. See `[watch.sensitive]` in RELAY.md for configuration and detector-failure logging.
 
-- **VisionPaste / Intelligent Screenshot Context (v1)**: Optional local analysis pipeline (`[vision]` in config.toml) that runs external commands (tesseract etc.) on screenshots **at explicit read time** on the serving daemon. Produces OCR text + descriptions included in `/clipboard` (and `/clipboard/history/{id}`) responses and written as `.analysis.txt` sidecars by `pastelocal-remote`. Skills present the rich text first. 
+- **VisionPaste v2 / Proactive Screenshot Intelligence**: Optional `[vision]` pipeline. Analysis now runs **proactively** in the clipboard watcher (debounced, limited, fail-open) when new non-concealed images detected; results cached (in-mem + disk for restarts) and served instantly on reads/history with zero external cmd latency. Still writes `.analysis.txt` sidecars. 5+ doctor checks, TUI status, skills-first UX. Back-compat with v1 demand path.
   - v1 limitations (by design, per scoped plan): Analysis is demand-driven on read (not pre-computed in watcher goroutine); relay carries raw bytes only; history stores raw bytes (re-analysis occurs on history fetch if still present on source clipboard). Concealed items never analyzed.
   Configure example:
   ```toml
@@ -84,8 +84,8 @@ make build
   command = "tesseract - - 2>/dev/null || true"
   ```
 
-- **Recall v1 (Natural Language History Search)**: Semantic search over clipboard history using user-supplied embedding commands (Ollama, local Python, etc.). Query with `pastelocal-remote --search "the docker error from last night"` or the `/recall` skill. Results are ranked by cosine similarity over text content (and VisionPaste OCR+description for screenshots — the killer combo). 
-  - Privacy: Concealed items are never embedded or returned. Embeddings live only in memory (lost on daemon restart in v1).
+- **Recall v2 (Natural Language History Search)**: Production-grade semantic search over clipboard history using user-supplied local embedding commands (Ollama, pure Python with sentence-transformers, etc.). Query with `pastelocal-remote --search "the docker error from last night"` or the `/recall` skill. Results are ranked by cosine similarity over text content (and VisionPaste OCR+description for screenshots — the killer combo). Recent embedding vectors are cached on disk (best-effort, unencrypted) so that the *first time* an item that was seen before a restart is read again, the external embedding command is skipped and the vector is attached instantly. The actual searchable history is still a small in-memory ring buffer with TTL; `--search` can only return items that have been read at least once since the daemon started.
+  - Privacy: Concealed items are never embedded or returned. The embedding cache is best-effort (unencrypted on disk under ~/.cache/pastelocal, 0600, consistent with VisionPaste analysis cache) and bounded.
   - Enable with a 3-line config block + one of the ready-made scripts in `docs/examples/`.
   - Example (Ollama + nomic-embed-text, copy the script too):
     ```toml

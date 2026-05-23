@@ -43,6 +43,7 @@ type Config struct {
 	Vision             VisionConfig    `toml:"vision"`
 	Relay              RelayConfig     `toml:"relay"`
 	Watch              WatchConfig     `toml:"watch"`
+	Recall             RecallConfig    `toml:"recall"`
 }
 
 type MacOSConfig struct {
@@ -114,6 +115,18 @@ type VisionEntry struct {
 	Command string `toml:"command"` // Shell command: image bytes on stdin, text analysis on stdout.
 }
 
+// RecallConfig controls Recall v2 semantic history search (natural language queries over
+// clipboard history using user-supplied local embedding commands, e.g. Ollama + nomic-embed-text
+// or a small Python script). Text content (and VisionPaste OCR+description for images) is
+// embedded at capture time (or proactively via watcher) and used for cosine-similarity search.
+// Concealed/sensitive items are never embedded. Embeddings are best-effort and survive restarts
+// via a bounded on-disk cache.
+type RecallConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Timeout int    `toml:"timeout_seconds"` // per-embed command timeout
+	Command string `toml:"command"`         // single shell command: text on stdin, embedding vector (whitespace or JSON floats) on stdout
+}
+
 // RelayConfig controls the E2E encrypted relay for multi-device sync.
 type RelayConfig struct {
 	Enabled       bool   `toml:"enabled"`
@@ -182,6 +195,10 @@ func Default() *Config {
 		Vision: VisionConfig{
 			Enabled: false,
 			Timeout: 15,
+		},
+		Recall: RecallConfig{
+			Enabled: false,
+			Timeout: 30,
 		},
 		Relay: RelayConfig{
 			Enabled:       false,

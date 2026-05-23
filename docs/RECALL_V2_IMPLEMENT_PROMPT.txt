@@ -1,0 +1,48 @@
+Implement Recall v2 — production-grade semantic clipboard history search (natural language `--search`, stable `--id` fetch, proactive + restart-surviving embeddings, full doctor/TUI/skill polish) — exactly as specified in the planning document at:
+
+/Users/MorgansM4/.grok/sessions/%2FUsers%2FMorgansM4%2FDocuments%2FCoding%2FPasteLocal/019e5504-6797-7e22-8f4d-d4c894cd4efc/plan.md
+
+Read that plan file in full before doing anything else. It is the single source of truth for scope, files, reuse patterns, 4-pass structure, and the mandatory real verification checklist.
+
+=== NON-NEGOTIABLE SAFEGUARDS — THESE OVERRIDE EVERYTHING (READ AND OBEY) ===
+
+1. NEVER STOP EARLY OR ASK THE USER FOR PERMISSION TO CONTINUE.
+   If at any point (after a clean 0-issue round, after any pass, or when any reviewer finds issues) you determine that more work is required to reach true production quality as defined in the plan, you are **pre-approved and REQUIRED** to continue immediately with additional passes, extra verification, or whatever is needed. Do not output any message suggesting "run this again", "a second pass is recommended", "you can continue later", "core is done", or similar.
+
+2. AUTOMATIC RECOVERY AND CONTINUATION.
+   If any subagent, task, or step fails or times out, log the failure clearly and immediately restart equivalent work. The overall run must stay alive until the full production bar is met. The user explicitly does not want to wake up to a half-finished state.
+
+3. REAL VERIFICATION IS MANDATORY — NO SIMULATIONS.
+   You must personally execute and paste real output from commands that prove:
+   - A real daemon with [watch] + [vision] + [recall] enabled (tesseract or equivalent + working Ollama or Python embedder from docs/examples/).
+   - New screenshots and text are captured.
+   - `pastelocal-remote --search "the red error dialog" --limit 5` returns ranked, relevant results with OCR previews and stable IDs.
+   - `pastelocal-remote --id <ID>` writes the file + .analysis.txt sidecar instantly.
+   - Doctor shows 5+ recall checks with useful output.
+   - TUI shows a live Recall (v2) status box with dimension.
+   - Embeddings and analysis survive a full daemon restart.
+   - Concealed items are never embedded or returned in search.
+   Only after you have done this and pasted verbatim output may you consider the run complete.
+
+4. PRODUCTION BAR (the run may ONLY terminate when ALL are green):
+   - Embedder pipeline + cosine Search fully working (read path + history).
+   - recallCache (disk 0600 JSON) + proactive watcher embedding + restart survival.
+   - Full `--search` + `--id` support in pastelocal-remote with excellent UX.
+   - 5+ doctor recall checks (command works, dim, timeout, privacy, etc.).
+   - TUI shows live Recall status box (enabled + dim).
+   - Skills present Recall results beautifully (already mostly done; minor polish ok).
+   - Tests + `make lint && make test -race` completely clean.
+   - Real end-to-end verification executed with actual external commands (Ollama + tesseract) and verbatim output captured.
+   - Docs + examples/ good enough for a new user to get `--search` magic working in < 5 minutes.
+   - Zero remaining "Recall v1", "not yet wired", or "v1 limitation" language in code or public docs.
+
+5. LOW-PRESSURE, HIGH-QUALITY, OVERNIGHT STYLE.
+   Take the time. Between major changes, actually run the daemon with real [recall] + [vision] + [watch], trigger clipboard changes (screenshots + text), run `--search`, doctor, TUI, restart the daemon, re-search, and capture everything. Multiple passes are expected and welcomed.
+
+The plan document referenced above (the one in the 019e5504... session directory) is the complete contract. Follow its 4-pass structure (or continue beyond it). Write the usual /tmp/grok-impl-* summary artifacts. Use the same IMPL_ID for continuity across any internal resumes.
+
+Begin by reading the full planning document, then start Pass 1 (config + Embedder + history.Search + handler activation).
+
+You have the mandate, the time, and the explicit rules to deliver a complete, production-quality Recall v2 without ever stopping early or asking the user to restart you.
+
+Good luck — this is the feature that makes the agent say "it just knew what I meant."

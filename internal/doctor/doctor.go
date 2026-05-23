@@ -53,6 +53,20 @@ func RunChecks(cfg *config.Config, fix bool) []CheckResult {
 	}
 	results = append(results, checkKeychainEntry(cfg))
 	results = append(results, checkClipboardTool(cfg))
+	if cfg.Vision.Enabled {
+		results = append(results, checkVisionEnabled(cfg))
+		results = append(results, checkVisionChain(cfg))
+		results = append(results, checkVisionTimeout(cfg))
+		results = append(results, checkVisionCommands(cfg))
+		results = append(results, checkVisionAnalysisAvailable(cfg))
+	}
+
+	// Recall v2 checks (always run for discoverability; several are soft when disabled).
+	results = append(results, checkRecallEnabled(cfg))
+	results = append(results, checkRecallCommand(cfg))
+	results = append(results, checkRecallTimeout(cfg))
+	results = append(results, checkRecallCommandWorks(cfg))
+	results = append(results, checkRecallDim(cfg))
 
 	// Per-host checks (spec §11.3 items 8–9).
 	for alias := range cfg.Hosts {
@@ -77,6 +91,20 @@ func RunChecks(cfg *config.Config, fix bool) []CheckResult {
 		}
 		results = append(results, checkKeychainEntry(cfg))
 		results = append(results, checkClipboardTool(cfg))
+		if cfg.Vision.Enabled {
+			results = append(results, checkVisionEnabled(cfg))
+			results = append(results, checkVisionChain(cfg))
+			results = append(results, checkVisionTimeout(cfg))
+			results = append(results, checkVisionCommands(cfg))
+			results = append(results, checkVisionAnalysisAvailable(cfg))
+		}
+		// Recall v2 (re-run after fixes)
+		results = append(results, checkRecallEnabled(cfg))
+		results = append(results, checkRecallCommand(cfg))
+		results = append(results, checkRecallTimeout(cfg))
+		results = append(results, checkRecallCommandWorks(cfg))
+		results = append(results, checkRecallDim(cfg))
+
 		for alias := range cfg.Hosts {
 			results = append(results, RunHostChecks(cfg, alias, false)...)
 		}

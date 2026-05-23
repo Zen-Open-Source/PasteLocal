@@ -1,15 +1,15 @@
 ---
 name: recall
 description: >
-  Use natural language to search the user's local clipboard history (Recall v1).
+  Use natural language to search the user's local clipboard history (Recall v2).
   Finds the most relevant past screenshot or text even when you don't remember the exact time.
 allowed-tools: Bash(pastelocal-remote:*), Read(*), Bash(rm:*)
 metadata:
-  short-description: "Semantic search over clipboard history using Recall v1"
+  short-description: "Semantic search over clipboard history using Recall v2"
   category: "clipboard"
 ---
 
-# PasteLocal /recall — Grok Skill (Recall v1)
+# PasteLocal /recall — Grok Skill (Recall v2)
 
 Search the entire clipboard history using natural language instead of manually running `--list` and guessing indices. Powered by user-configured local embeddings (e.g. Ollama) + VisionPaste OCR text for screenshots.
 

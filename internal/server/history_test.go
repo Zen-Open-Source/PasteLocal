@@ -1,14 +1,16 @@
 package server
 
 import (
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestHistoryBufferAddAndGet(t *testing.T) {
 	h := NewHistoryBuffer(5, 3600, "test-token")
 
-	h.Add("id-1", "png", []byte("image1"))
-	h.Add("id-2", "text", []byte("text2"))
+	h.Add("id-1", "png", []byte("image1"), "", nil, time.Time{})
+	h.Add("id-2", "text", []byte("text2"), "", nil, time.Time{})
 
 	if h.Len() != 2 {
 		t.Errorf("Len() = %d, want 2", h.Len())
@@ -29,9 +31,9 @@ func TestHistoryBufferAddAndGet(t *testing.T) {
 func TestHistoryBufferEviction(t *testing.T) {
 	h := NewHistoryBuffer(2, 3600, "test-token")
 
-	h.Add("id-1", "png", []byte("image1"))
-	h.Add("id-2", "png", []byte("image2"))
-	h.Add("id-3", "png", []byte("image3"))
+	h.Add("id-1", "png", []byte("image1"), "", nil, time.Time{})
+	h.Add("id-2", "png", []byte("image2"), "", nil, time.Time{})
+	h.Add("id-3", "png", []byte("image3"), "", nil, time.Time{})
 
 	if h.Len() != 2 {
 		t.Errorf("Len() = %d, want 2", h.Len())
@@ -64,8 +66,8 @@ func TestHistoryBufferEviction(t *testing.T) {
 func TestHistoryBufferList(t *testing.T) {
 	h := NewHistoryBuffer(5, 3600, "test-token")
 
-	h.Add("id-1", "png", []byte("image1"))
-	h.Add("id-2", "text", []byte("text2"))
+	h.Add("id-1", "png", []byte("image1"), "", nil, time.Time{})
+	h.Add("id-2", "text", []byte("text2"), "", nil, time.Time{})
 
 	items := h.List()
 	if len(items) != 2 {
@@ -83,7 +85,7 @@ func TestHistoryBufferList(t *testing.T) {
 func TestHistoryBufferEncryption(t *testing.T) {
 	h := NewHistoryBuffer(5, 3600, "test-token-for-encryption")
 
-	h.Add("id-1", "png", []byte("secret-image-data"))
+	h.Add("id-1", "png", []byte("secret-image-data"), "", nil, time.Time{})
 
 	data, _, err := h.Get("id-1")
 	if err != nil {
@@ -115,7 +117,7 @@ func TestHistoryBufferEmptyList(t *testing.T) {
 func TestHistoryBufferUpdateKey(t *testing.T) {
 	h := NewHistoryBuffer(5, 3600, "old-token")
 
-	h.Add("id-1", "png", []byte("data-with-old-key"))
+	h.Add("id-1", "png", []byte("data-with-old-key"), "", nil, time.Time{})
 
 	// Updating the key should not break existing entries
 	// because they were encrypted with the old key.
@@ -130,5 +132,56 @@ func TestHistoryBufferUpdateKey(t *testing.T) {
 		// This might succeed if encryption falls back to plaintext,
 		// which is fine for a best-effort approach.
 		t.Log("entry decrypted with new key (expected behavior with key rotation)")
+	}
+}
+
+// TestHistoryBufferAnalysisStorage covers v2 proactive/history-stored analysis (Pass 4).
+func TestHistoryBufferAnalysisStorage(t *testing.T) {
+	h := NewHistoryBuffer(3, 3600, "test-token")
+	ar := &AnalysisResult{OCRText: "test ocr", Description: "test desc from watcher"}
+
+	h.Add("id-v2", "png", []byte("fake-png"), "", nil, time.Time{})
+	h.SetAnalysis("id-v2", ar)
+
+	got := h.GetAnalysis("id-v2")
+	if got == nil || got.OCRText != "test ocr" || got.Description != "test desc from watcher" {
+		t.Errorf("stored analysis mismatch: %+v", got)
+	}
+	if h.GetAnalysis("missing") != nil {
+		t.Error("GetAnalysis for unknown should be nil")
+	}
+}
+
+// TestHistoryBufferRecallSearch exercises the new v2 semantic search path.
+func TestHistoryBufferRecallSearch(t *testing.T) {
+	h := NewHistoryBuffer(10, 3600, "test-token")
+
+	// Two entries with embeddings (simulating what the embedder would produce)
+	h.Add("id-text", "text", []byte("docker volume mount error last night"), "docker volume mount error last night", []float64{0.9, 0.1, 0.0}, time.Now().UTC())
+	h.Add("id-screenshot", "png", []byte("fake-png-bytes"), "Nginx 502 red error dialog upstream timed out", []float64{0.1, 0.9, 0.0}, time.Now().UTC())
+
+	// Query vector close to the text entry
+	query := []float64{0.85, 0.15, 0.0}
+	results := h.Search(query, 5)
+
+	if len(results) == 0 {
+		t.Fatal("expected at least one search result")
+	}
+
+	// Highest score should be the docker text entry
+	if results[0].ID != "id-text" {
+		t.Errorf("top result ID = %s, want id-text", results[0].ID)
+	}
+	if !strings.Contains(strings.ToLower(results[0].Preview), "docker") {
+		t.Errorf("preview should contain original search text, got %q", results[0].Preview)
+	}
+	if results[0].Score < 0.8 {
+		t.Errorf("score too low: %f", results[0].Score)
+	}
+
+	// Limit works
+	results = h.Search(query, 1)
+	if len(results) != 1 {
+		t.Errorf("limit=1 returned %d results", len(results))
 	}
 }

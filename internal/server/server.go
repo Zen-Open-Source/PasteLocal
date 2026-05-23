@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -48,7 +49,13 @@ type Server struct {
 	redaction           *RedactionEngine
 	processors          *ProcessorPipeline
 	analysis            *AnalysisPipeline
+	analysisCache       map[string]*AnalysisResult
+	analysisCacheMu     sync.Mutex
+	analysisSem         chan struct{} // concurrency limiter for proactive watcher analyses
+	embedSem            chan struct{} // concurrency limiter for proactive recall embeddings (cheaper than vision)
 	recall              *Embedder
+	recallCache         map[string][]float64 // Recall v2: hash -> embedding vector (restart survival)
+	recallCacheMu       sync.Mutex
 	watchHub            *WatchHub
 	watcherStop         chan struct{} // for graceful Shutdown of the always-running watcher
 	httpServer          *http.Server
@@ -72,11 +79,17 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 		rateLimiter: NewRateLimiter(cfg.RateLimitPerMinute),
 		redaction:   NewRedactionEngine(cfg),
 		processors:  NewProcessorPipeline(cfg, logger),
-		analysis:    NewAnalysisPipeline(cfg, logger),
-		recall:      NewEmbedder(cfg, logger),
-		watchHub:    NewWatchHub(logger),
+		analysis:      NewAnalysisPipeline(cfg, logger),
+		analysisCache: make(map[string]*AnalysisResult),
+		analysisSem:   make(chan struct{}, 2),
+		embedSem:      make(chan struct{}, 2),
+		recallCache:   make(map[string][]float64),
+		recall:        NewEmbedder(cfg, logger),
+		watchHub:      NewWatchHub(logger),
 	}
 
+	s.loadAnalysisCache()
+	s.loadRecallCache()
 	s.watchEnabled.Store(cfg.Watch.Enabled)
 	s.watcherStop = make(chan struct{})
 
@@ -164,6 +177,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.watcherStop != nil {
 		close(s.watcherStop)
 	}
+	s.saveAnalysisCache()
+	s.saveRecallCache()
 	return s.httpServer.Shutdown(shutdownCtx)
 }
 
@@ -199,6 +214,171 @@ func (s *Server) RelayStatus() (enabled bool, url, devID, fp string, peerCount i
 	peerCount = s.relayPeerCount
 	lastPush = s.lastRelayPush
 	return true, url, devID, fp, peerCount, lastPush, healthy
+}
+
+// cacheAnalysis stores proactive analysis result (from watcher) under image content hash.
+// Enables instant reads on subsequent /clipboard GET. Bounded size for memory safety.
+func (s *Server) cacheAnalysis(key string, res *AnalysisResult) {
+	if res == nil || key == "" {
+		return
+	}
+	s.analysisCacheMu.Lock()
+	defer s.analysisCacheMu.Unlock()
+	if len(s.analysisCache) > 50 {
+		// naive eviction of one arbitrary entry (smallest-change bounded cache)
+		for k := range s.analysisCache {
+			delete(s.analysisCache, k)
+			break
+		}
+	}
+	s.analysisCache[key] = &AnalysisResult{
+		OCRText:     res.OCRText,
+		Description: res.Description,
+	}
+}
+
+// lookupCachedAnalysis returns a copy of cached result for zero-latency path (watcher-proactive or prior read).
+func (s *Server) lookupCachedAnalysis(key string) *AnalysisResult {
+	if key == "" {
+		return nil
+	}
+	s.analysisCacheMu.Lock()
+	defer s.analysisCacheMu.Unlock()
+	if r, ok := s.analysisCache[key]; ok {
+		return &AnalysisResult{OCRText: r.OCRText, Description: r.Description}
+	}
+	return nil
+}
+
+// visionCacheFile returns on-disk location for analysis cache JSON (survives daemon restarts).
+// Uses 0700/0600; errors are silent (fail-open, no path disclosure in logs per security rules).
+func visionCacheFile() string {
+	return expandPath("~/.config/pastelocal/vision-analysis-cache.json")
+}
+
+// loadAnalysisCache hydrates the in-memory cache from disk JSON if present (Pass 2 restart survival).
+func (s *Server) loadAnalysisCache() {
+	path := visionCacheFile()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var m map[string]struct {
+		OCRText     string
+		Description string
+	}
+	if json.Unmarshal(data, &m) != nil {
+		return
+	}
+	s.analysisCacheMu.Lock()
+	defer s.analysisCacheMu.Unlock()
+	for k, v := range m {
+		s.analysisCache[k] = &AnalysisResult{OCRText: v.OCRText, Description: v.Description}
+	}
+}
+
+// saveAnalysisCache persists current cache to disk (0600) on shutdown/reload for restart survival.
+func (s *Server) saveAnalysisCache() {
+	s.analysisCacheMu.Lock()
+	defer s.analysisCacheMu.Unlock()
+	if len(s.analysisCache) == 0 {
+		return
+	}
+	toSave := make(map[string]struct {
+		OCRText     string
+		Description string
+	}, len(s.analysisCache))
+	for k, v := range s.analysisCache {
+		toSave[k] = struct {
+			OCRText     string
+			Description string
+		}{v.OCRText, v.Description}
+	}
+	data, _ := json.Marshal(toSave)
+	dir := filepath.Dir(visionCacheFile())
+	_ = os.MkdirAll(dir, 0o700) // 0700 not 0755 (avoids known insecure default)
+	_ = os.WriteFile(visionCacheFile(), data, 0o600)
+}
+
+// --- Recall v2 embedding cache (hash -> []float64, restart survival, bounded) ---
+
+func recallCacheFile() string {
+	// Best-effort unencrypted cache (same as vision-analysis-cache.json).
+	// Located under ~/.cache (not ~/.config) because it is derived data, not user configuration.
+	// Files are 0600. If you require the same encryption-at-rest as HistoryBuffer,
+	// you would need to derive the key from the auth token at cache load/save time.
+	return expandPath("~/.cache/pastelocal/recall-embeddings-cache.json")
+}
+
+// cacheRecallEmbedding stores a vector under content hash (from watcher or read path).
+// Bounded + naive eviction for memory safety (same policy as analysis cache).
+func (s *Server) cacheRecallEmbedding(key string, vec []float64) {
+	if len(vec) == 0 || key == "" {
+		return
+	}
+	s.recallCacheMu.Lock()
+	defer s.recallCacheMu.Unlock()
+	if len(s.recallCache) > 200 {
+		for k := range s.recallCache {
+			delete(s.recallCache, k)
+			break
+		}
+	}
+	// copy to avoid caller mutation
+	cp := make([]float64, len(vec))
+	copy(cp, vec)
+	s.recallCache[key] = cp
+}
+
+// lookupCachedRecallEmbedding returns a copy if present (zero-latency for read path).
+func (s *Server) lookupCachedRecallEmbedding(key string) []float64 {
+	if key == "" {
+		return nil
+	}
+	s.recallCacheMu.Lock()
+	defer s.recallCacheMu.Unlock()
+	if v, ok := s.recallCache[key]; ok && len(v) > 0 {
+		cp := make([]float64, len(v))
+		copy(cp, v)
+		return cp
+	}
+	return nil
+}
+
+// loadRecallCache hydrates from disk (0600 JSON) on startup.
+func (s *Server) loadRecallCache() {
+	path := recallCacheFile()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var m map[string][]float64
+	if json.Unmarshal(data, &m) != nil {
+		return
+	}
+	s.recallCacheMu.Lock()
+	defer s.recallCacheMu.Unlock()
+	for k, v := range m {
+		if len(v) > 0 {
+			cp := make([]float64, len(v))
+			copy(cp, v)
+			s.recallCache[k] = cp
+		}
+	}
+}
+
+// saveRecallCache persists to disk on shutdown/reload (0600, 0700 dir).
+func (s *Server) saveRecallCache() {
+	s.recallCacheMu.Lock()
+	defer s.recallCacheMu.Unlock()
+	if len(s.recallCache) == 0 {
+		return
+	}
+	// Direct map is already []float64, safe to marshal
+	data, _ := json.Marshal(s.recallCache)
+	dir := filepath.Dir(recallCacheFile())
+	_ = os.MkdirAll(dir, 0o700)
+	_ = os.WriteFile(recallCacheFile(), data, 0o600)
 }
 
 // handleSignals responds to OS signals.
@@ -237,6 +417,18 @@ func (s *Server) reloadConfig() {
 	s.redaction = NewRedactionEngine(cfg)
 	s.processors = NewProcessorPipeline(cfg, s.logger)
 	s.analysis = NewAnalysisPipeline(cfg, s.logger)
+	if s.analysisCache == nil {
+		s.analysisCache = make(map[string]*AnalysisResult)
+	}
+	if s.analysisSem == nil {
+		s.analysisSem = make(chan struct{}, 2)
+	}
+	if s.embedSem == nil {
+		s.embedSem = make(chan struct{}, 2)
+	}
+	if s.recallCache == nil {
+		s.recallCache = make(map[string][]float64)
+	}
 	s.recall = NewEmbedder(cfg, s.logger)
 	s.watchEnabled.Store(cfg.Watch.Enabled)
 	s.watcherStop = make(chan struct{})
@@ -503,6 +695,52 @@ func (s *Server) startClipboardWatcher() {
 		// Also push to relay peers (if configured). Non-blocking inside.
 		if s.relayClient != nil && s.cfg.Relay.AutoUpload {
 			go s.pushToRelayPeers(content.Format, content.Data)
+		}
+
+		// v2 Pass 1: Proactive analysis for new PNG images detected by watcher.
+		// Runs in limited-concurrency background goroutine after concealed filter + debounce.
+		// Results cached by hash for instant reads; fail-open (never blocks detection or storage).
+		if content.Format == "png" && s.analysis != nil && s.analysis.AnalysisStepCount() > 0 {
+			key := fmt.Sprintf("%x", sha256.Sum256(content.Data))
+			select {
+			case s.analysisSem <- struct{}{}:
+				go func(c *clipboard.Content, k string) {
+					defer func() { <-s.analysisSem }()
+					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+					defer cancel()
+					if res := s.analysis.Analyze(ctx, c); res != nil {
+						s.cacheAnalysis(k, res)
+						s.logger.Debug("vision: proactive analysis stored from watcher", "hash_prefix", k[:8])
+					}
+				}(content, key)
+			default:
+				s.logger.Debug("vision: proactive analysis skipped (concurrency limit)")
+			}
+		}
+
+		// Recall v2 (Pass 1): proactive embed hook (text always; images after vision cache hit).
+		// The heavy lifting for history population happens in the read path (handlers),
+		// which now produces good embeddings thanks to Vision v2 cache. This goroutine
+		// pre-computes for items that may be read soon and will be wired to recallCache
+		// in Pass 2.
+		if s.recall != nil && s.recall.IsEnabled() && content.Format == "text" {
+			txt := string(content.Data)
+			if strings.TrimSpace(txt) != "" {
+				select {
+				case s.embedSem <- struct{}{}:
+					go func(t string) {
+						defer func() { <-s.embedSem }()
+						ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+						defer cancel()
+						if vec, err := s.recall.Embed(ctx, t); err == nil && len(vec) > 0 {
+							s.cacheRecallEmbedding(fmt.Sprintf("%x", sha256.Sum256(content.Data)), vec)
+							s.logger.Debug("recall: proactive text embed cached")
+						}
+					}(txt)
+				default:
+					s.logger.Debug("recall: proactive embed skipped (concurrency limit)")
+				}
+			}
 		}
 	}
 }

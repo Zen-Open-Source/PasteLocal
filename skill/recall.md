@@ -1,9 +1,9 @@
 ---
-description: Search clipboard history using natural language (Recall v1 semantic search).
+description: Search clipboard history using natural language (Recall v2 semantic search).
 allowed-tools: Bash(pastelocal-remote:*), Read(*), Bash(rm:*)
 ---
 
-Recall v1 — natural language search over your local clipboard history.
+Recall v2 — natural language search over your local clipboard history.
 
 When the user asks to find something they copied or screenshotted earlier ("the docker error", "that login dialog", "the code with the bug from last night"), use semantic search instead of forcing them to describe timestamps or do many --list + --index loops.
 

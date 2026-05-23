@@ -56,6 +56,10 @@ type VersionResponse struct {
 	LastClipboardChange string `json:"last_clipboard_change,omitempty"`
 	// Relay (v1.0) status for TUI + doctor (populated when [relay] enabled in config).
 	Relay *RelayInfo `json:"relay,omitempty"`
+	// Recall v2 status (lightweight scalars for TUI/doctor; populated when [recall] enabled).
+	RecallEnabled bool   `json:"recall_enabled,omitempty"`
+	RecallDim     int    `json:"recall_dim,omitempty"`
+	RecallStatus  string `json:"recall_status,omitempty"` // "ready", "ready (384d)", etc.
 }
 
 // RelayInfo mirrors the plan-specified sub-object for live relay dashboard/doctor data.
@@ -89,7 +93,7 @@ type HistoryResponse struct {
 	Items []HistoryEntry `json:"items"`
 }
 
-// SearchResult is a single ranked result from Recall v1 semantic search
+// SearchResult is a single ranked result from Recall semantic search
 // (GET /clipboard/history/search). Score is cosine similarity (higher = better).
 // Preview is a short excerpt of the embedded text (content or VisionPaste analysis).
 type SearchResult struct {
