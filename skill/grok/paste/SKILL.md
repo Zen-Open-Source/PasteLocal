@@ -32,7 +32,7 @@ Bring your laptop's clipboard (especially screenshots) into a remote machine whe
 
 4. **Read the file** using your Read tool on the exact path returned.
 
-5. **VisionPaste enrichment (new in v1)**: If the clipboard item was an image/screenshot and the local daemon has `[vision]` analysis configured (e.g. tesseract OCR), a companion sidecar file with the same base name but `.analysis.txt` suffix will exist next to the image (e.g. `...-abc123.analysis.txt`). Read it too — it contains pre-extracted OCR text and/or a natural-language description. Present this rich text context to the model *first* (before or alongside the image); it dramatically improves token efficiency and accuracy for code, errors, UI, diagrams etc. The image remains available via your vision capabilities for anything the text missed.
+5. **VisionPaste enrichment (v2 proactive & cached)**: If the clipboard item was an image/screenshot and the local daemon has `[vision]` analysis configured (e.g. tesseract OCR), a companion sidecar file with the same base name but `.analysis.txt` suffix will exist next to the image (e.g. `...-abc123.analysis.txt`). Read it too — it contains pre-extracted OCR text and/or a natural-language description (now produced proactively by watcher for instant availability). Present this rich text context to the model *first* (before or alongside the image); it dramatically improves token efficiency and accuracy for code, errors, UI, diagrams etc. The image remains available via your vision capabilities for anything the text missed.
 
 6. **Clean up**: Immediately run `rm <path>` and (if present) `rm <analysis-sidecar>` (use Bash) so temp files do not linger.
 
