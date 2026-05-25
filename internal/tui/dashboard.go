@@ -330,6 +330,17 @@ func (m Model) View() string {
 	b.WriteString(renderBox(recallInner, m.width, boxSt))
 	b.WriteString("\n")
 
+	// Recent History box (Slice 1 foundation ONLY: static placeholder example data for 3 entries.
+	// Real data fetch + model state + refresh() integration deferred to Slice 2 per strict scope.
+	// Uses *only* existing boxStyle, renderBox, fieldStyle, mutedStyle (no layout/resize changes).
+	recentInner := fmt.Sprintf("%s\n%s %s  %s  %s\n%s %s  %s  %s\n%s %s  %s  %s",
+		fieldStyle.Render("Recent History:"),
+		mutedStyle.Render("1"), "2026-05-24T12:34:56Z", "png ", mutedStyle.Render("  48192 bytes"),
+		mutedStyle.Render("2"), "2026-05-24T12:30:11Z", "text", mutedStyle.Render("   2048 bytes"),
+		mutedStyle.Render("3"), "2026-05-24T11:59:59Z", "png ", mutedStyle.Render("  12011 bytes"))
+	b.WriteString(renderBox(recentInner, m.width, boxSt))
+	b.WriteString("\n")
+
 	// Hosts box (symbols for quick ok/unreachable scan; termius noted subtly).
 	if len(m.hosts) > 0 {
 		var hostLines []string

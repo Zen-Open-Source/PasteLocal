@@ -44,6 +44,9 @@ func main() {
 	searchLimit := flag.Int("limit", 5, "max results for --search (1-20)")
 	historyID := flag.String("id", "", "fetch specific history entry by stable ID (preferred over --index)")
 
+	// DirectPaste v1 test flag (for protocol validation during development)
+	testDirectPaste := flag.Bool("test-direct-paste", false, "send a test DirectPasteRequest (development / protocol validation only)")
+
 	// Snippet mode: fetch a named snippet.
 	snippet := flag.String("snippet", "", "fetch a named snippet by name")
 
@@ -55,7 +58,7 @@ func main() {
 
 	flag.Parse()
 
-	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index, *snippet, *relayURL, *relayPeer, *search, *searchLimit, *historyID))
+	os.Exit(run(*port, expandHome(*outDir), *timeout, expandHome(*tokenFile), *send, *sendFormat, *watch, *list, *index, *snippet, *relayURL, *relayPeer, *search, *searchLimit, *historyID, *testDirectPaste))
 }
 
 // expandHome replaces a leading ~ with the user's home directory.
@@ -79,7 +82,7 @@ func readToken(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int, snippetName string, relayURL string, relayPeer string, searchQuery string, searchLimit int, historyID string) int {
+func run(port int, outDir string, timeout time.Duration, tokenFile string, sendPath string, sendFormat string, doWatch bool, doList bool, index int, snippetName string, relayURL string, relayPeer string, searchQuery string, searchLimit int, historyID string, testDirectPaste bool) int {
 	token, err := readToken(tokenFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading token: %v\n", err)
@@ -130,6 +133,11 @@ func run(port int, outDir string, timeout time.Duration, tokenFile string, sendP
 	// Direct ID fetch (stable, works for both SSH and relay).
 	if historyID != "" {
 		return runHistoryFetchByID(client, baseURL, token, outDir, historyID)
+	}
+
+	// DirectPaste v1 test mode
+	if testDirectPaste {
+		return runTestDirectPaste(client, baseURL, token)
 	}
 
 	// Default: fetch clipboard (read mode).
@@ -1119,6 +1127,50 @@ func runHistoryFetchByID(client *http.Client, baseURL, token, outDir, id string)
 		}
 		absPath, _ := filepath.Abs(path)
 		fmt.Println(absPath)
+	}
+	return 0
+}
+
+// runTestDirectPaste is a development helper that exercises the DirectPaste v1 protocol.
+// It sends a PasteRequest and prints the sequence of responses.
+func runTestDirectPaste(client *http.Client, baseURL, token string) int {
+	reqBody := proto.DirectPasteRequest{
+		Type:       "paste_request",
+		RequestID:  "test-" + time.Now().Format("150405"),
+		ClientName: "pastelocal-remote-test",
+	}
+
+	bodyBytes, _ := json.Marshal(reqBody)
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/clipboard/direct-paste", bytes.NewReader(bodyBytes))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating request: %v\n", err)
+		return 10
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "direct paste request failed: %v\n", err)
+		return 10
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "daemon returned %d\n", resp.StatusCode)
+		return 10
+	}
+
+	dec := json.NewDecoder(resp.Body)
+	for dec.More() {
+		var raw map[string]interface{}
+		if err := dec.Decode(&raw); err != nil {
+			fmt.Fprintf(os.Stderr, "decode error: %v\n", err)
+			break
+		}
+		pretty, _ := json.MarshalIndent(raw, "", "  ")
+		fmt.Println(string(pretty))
+		fmt.Println("---")
 	}
 	return 0
 }

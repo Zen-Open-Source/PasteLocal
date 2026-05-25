@@ -136,6 +136,56 @@ type SnippetListResponse struct {
 	Items []SnippetEntry `json:"items"`
 }
 
+// -----------------------------------------------------------------------------
+// DirectPaste v1 Protocol Types
+// -----------------------------------------------------------------------------
+
+// DirectPasteRequest is sent by the remote side (tmux/zellij plugin, Termius, etc.)
+// to request the current local clipboard content for a "native paste" action.
+type DirectPasteRequest struct {
+	Type       string `json:"type"`        // "paste_request"
+	RequestID  string `json:"request_id"`
+	PaneID     string `json:"pane_id,omitempty"`
+	ClientName string `json:"client_name,omitempty"`
+}
+
+// DirectPasteAccepted is the first response from the local daemon.
+type DirectPasteAccepted struct {
+	Type           string `json:"type"` // "paste_accepted"
+	RequestID      string `json:"request_id"`
+	Format         string `json:"format"` // "text" | "png"
+	Size           int64  `json:"size"`
+	EstimatedChunks int   `json:"estimated_chunks,omitempty"`
+}
+
+// DirectPasteProgress is sent periodically for large payloads (especially images).
+type DirectPasteProgress struct {
+	Type       string `json:"type"` // "paste_progress"
+	RequestID  string `json:"request_id"`
+	BytesSent  int64  `json:"bytes_sent"`
+	TotalBytes int64  `json:"total_bytes"`
+	Percent    int    `json:"percent"`
+}
+
+// DirectPasteComplete is sent when the file has been fully written on the remote.
+type DirectPasteComplete struct {
+	Type          string `json:"type"` // "paste_complete"
+	RequestID     string `json:"request_id"`
+	Path          string `json:"path"`
+	AnalysisPath  string `json:"analysis_path,omitempty"`
+	Format        string `json:"format"`
+	ByteCount     int64  `json:"byte_count"`
+}
+
+// DirectPasteError is sent on any failure.
+type DirectPasteError struct {
+	Type        string `json:"type"` // "paste_error"
+	RequestID   string `json:"request_id"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	Recoverable bool   `json:"recoverable"`
+}
+
 // SnippetSaveRequest is the JSON request for POST /snippets.
 type SnippetSaveRequest struct {
 	Name        string `json:"name"`

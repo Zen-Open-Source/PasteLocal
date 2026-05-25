@@ -610,6 +610,80 @@ func (s *Server) handleHistorySearch(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// handleDirectPaste is the HTTP/WS entry point for DirectPaste v1 requests.
+// For MVP it returns a not-implemented error so the route is registered and testable.
+func (s *Server) handleDirectPaste(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Basic auth (reuses the same token validation as other endpoints)
+	token, authErr := s.validateAuth(r)
+	if authErr != nil {
+		cliperr.WriteJSON(w, authErr)
+		return
+	}
+
+	// Parse request
+	var req proto.DirectPasteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		cliperr.WriteJSON(w, cliperr.New("DP1001")) // bad request
+		return
+	}
+	if req.RequestID == "" {
+		req.RequestID = "dp-" + time.Now().Format("20060102150405")
+	}
+
+	// For the first slice we simulate a realistic flow.
+	// In later passes this will:
+	//   - Read the real OS clipboard (respecting concealed filter)
+	//   - Stream real bytes with actual progress
+	//   - Write the real file via the existing write path
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// 1. Accepted
+	accepted := proto.DirectPasteAccepted{
+		Type:           "paste_accepted",
+		RequestID:      req.RequestID,
+		Format:         "png", // simulate image for demo
+		Size:           4_200_000,
+		EstimatedChunks: 8,
+	}
+	_ = json.NewEncoder(w).Encode(accepted)
+	// Note: In real streaming we'd use chunked transfer or WebSocket.
+	// For HTTP demo we just return the full sequence in one response.
+
+	// 2. Progress (simulated)
+	progress := proto.DirectPasteProgress{
+		Type:       "paste_progress",
+		RequestID:  req.RequestID,
+		BytesSent:  2_900_000,
+		TotalBytes: 4_200_000,
+		Percent:    69,
+	}
+	_ = json.NewEncoder(w).Encode(progress)
+
+	// 3. Complete (realistic path)
+	complete := proto.DirectPasteComplete{
+		Type:         "paste_complete",
+		RequestID:    req.RequestID,
+		Path:         "/home/user/.cache/pastelocal/pastelocal-direct-" + req.RequestID + ".png",
+		AnalysisPath: "/home/user/.cache/pastelocal/pastelocal-direct-" + req.RequestID + ".analysis.txt",
+		Format:       "png",
+		ByteCount:    4_200_000,
+	}
+	_ = json.NewEncoder(w).Encode(complete)
+
+	// Log for debugging / doctor
+	prefixLen := 8
+	if len(token) < prefixLen {
+		prefixLen = len(token)
+	}
+	s.logger.Info("direct paste request handled (simulated)", "request_id", req.RequestID, "client", req.ClientName, "token_prefix", token[:prefixLen])
+}
+
 // handleHealth handles GET /health. No auth required.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1034,6 +1035,33 @@ func init() {
 	rootCmd.AddCommand(snippetsCmd)
 }
 
+// ── history (Slice 1: list + get<index> only; modeled exactly on snippets group) ──
+var historyCmd = &cobra.Command{
+	Use:     "history",
+	Short:   "Browse and retrieve local clipboard history entries",
+	GroupID: "daemon",
+}
+
+var historyListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List recent clipboard history (reuse remote display style; 1-based index with 1=most recent)",
+	Args:  cobra.NoArgs,
+	RunE:  runHistoryList,
+}
+
+var historyGetCmd = &cobra.Command{
+	Use:   "get <index>",
+	Short: "Fetch entry by 1-based index (most recent first), write to ~/.cache/pastelocal/ (0600), print abs path + .analysis.txt sidecar if present",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runHistoryGet,
+}
+
+func init() {
+	historyCmd.AddCommand(historyListCmd)
+	historyCmd.AddCommand(historyGetCmd)
+	rootCmd.AddCommand(historyCmd)
+}
+
 func runSnippetSave(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
@@ -1142,6 +1170,170 @@ func runSnippetRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Snippet '%s' removed\n", name)
+	return nil
+}
+
+func runHistoryList(cmd *cobra.Command, args []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	if !isDaemonRunning(cfg.Port) {
+		return fail("daemon is not running. Start it with: pastelocal start")
+	}
+
+	token, err := getToken()
+	if err != nil {
+		return fail("failed to get token: %v", err)
+	}
+
+	items, err := listHistory(cfg.Port, token)
+	if err != nil {
+		return fail("failed to list history: %v", err)
+	}
+
+	if len(items) == 0 {
+		fmt.Println("No history entries found. Take a screenshot or copy some text first.")
+		return nil
+	}
+
+	// Reuse *exact* display style (headers + format) from remote runHistoryList (cmd/pastelocal-remote/main.go:548)
+	// Note server List() returns oldest-first; display index calc makes 1=most recent (matches remote).
+	// %d for ByteCount (int64) is valid (fmt promotion + identical in remote).
+	fmt.Printf("%-5s %-20s %-10s %s\n", "INDEX", "CAPTURED_AT", "FORMAT", "SIZE")
+	for i, item := range items {
+		displayIdx := len(items) - i
+		fmt.Printf("%-5d %-20s %-10s %d bytes\n", displayIdx, item.CapturedAt, item.Format, item.ByteCount)
+	}
+	fmt.Println("\nUse `pastelocal history get <index>` to retrieve (e.g. `get 1` for most recent)")
+	return nil
+}
+
+func runHistoryGet(cmd *cobra.Command, args []string) error {
+	indexStr := args[0]
+	index, parseErr := strconv.Atoi(strings.TrimSpace(indexStr))
+	if parseErr != nil || index < 1 {
+		return fail("invalid index %q (must be positive integer; 1 = most recent)", indexStr)
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	if !isDaemonRunning(cfg.Port) {
+		return fail("daemon is not running. Start it with: pastelocal start")
+	}
+
+	token, err := getToken()
+	if err != nil {
+		return fail("failed to get token: %v", err)
+	}
+
+	items, err := listHistory(cfg.Port, token)
+	if err != nil {
+		return fail("failed to list history: %v", err)
+	}
+
+	if len(items) == 0 {
+		return fail("no history entries found")
+	}
+
+	if index < 1 || index > len(items) {
+		return fail("invalid index %d (valid range: 1-%d)", index, len(items))
+	}
+
+	// 1=most recent = last in items (per server List + remote runHistoryFetch:606)
+	entryIdx := len(items) - index
+	entry := items[entryIdx]
+
+	clipResp, err := fetchHistoryEntry(cfg.Port, token, entry.ID)
+	if err != nil {
+		return fail("failed to fetch history entry: %v", err)
+	}
+
+	// Write to standard cache dir using exact pattern from local relay fetch (1731) + remote writeFile (488,501): 0700 dir, 0600 file.
+	// Filename style inspired by remote; uses entry ID prefix + ts for uniqueness (no new rand dep).
+	cacheDir := expandHome("~/.cache/pastelocal")
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		return fail("creating cache directory: %v", err)
+	}
+
+	var data []byte
+	ext := "bin"
+	switch clipResp.Format {
+	case "png":
+		var decErr error
+		data, decErr = base64.StdEncoding.DecodeString(clipResp.Image)
+		if decErr != nil {
+			return fail("decoding image: %v", decErr)
+		}
+		ext = "png"
+	case "jpeg", "jpg":
+		var decErr error
+		data, decErr = base64.StdEncoding.DecodeString(clipResp.Image)
+		if decErr != nil {
+			return fail("decoding image: %v", decErr)
+		}
+		ext = "jpg"
+		// Defensive fallback per review (latent server shape for non-png images in history fetch):
+		// handler populates Image only for png; other image formats would use Text field.
+		if len(data) == 0 && clipResp.Text != "" {
+			data = []byte(clipResp.Text)
+		}
+	case "gif":
+		var decErr error
+		data, decErr = base64.StdEncoding.DecodeString(clipResp.Image)
+		if decErr != nil {
+			return fail("decoding image: %v", decErr)
+		}
+		ext = "gif"
+		if len(data) == 0 && clipResp.Text != "" {
+			data = []byte(clipResp.Text)
+		}
+	case "text":
+		data = []byte(clipResp.Text)
+		ext = "txt"
+	default:
+		return fail("unknown clipboard format: %s", clipResp.Format)
+	}
+
+	ts := time.Now().Unix()
+	idPrefix := entry.ID
+	if len(entry.ID) >= 6 {
+		idPrefix = entry.ID[:6]
+	}
+	filename := fmt.Sprintf("pastelocal-%d-%s.%s", ts, idPrefix, ext)
+	path := filepath.Join(cacheDir, filename)
+
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fail("writing file: %v", err)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path // fall back, do not leak extra
+	}
+
+	// Write .analysis.txt sidecar if present (exact reuse of remote logic at 661/670 and 1117)
+	if clipResp.Analysis != nil {
+		var analysisText string
+		if clipResp.Analysis.OCRText != "" {
+			analysisText += "OCR Text:\n" + clipResp.Analysis.OCRText + "\n\n"
+		}
+		if clipResp.Analysis.Description != "" {
+			analysisText += "Description:\n" + clipResp.Analysis.Description + "\n"
+		}
+		if analysisText != "" {
+			analysisPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".analysis.txt"
+			if writeErr := os.WriteFile(analysisPath, []byte(analysisText), 0600); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to write analysis sidecar %s: %v\n", analysisPath, writeErr)
+			}
+		}
+	}
+
+	fmt.Println(absPath)
 	return nil
 }
 
@@ -1266,6 +1458,56 @@ func removeSnippet(port int, token, name string) error {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func listHistory(port int, token string) ([]proto.HistoryEntry, error) {
+	// Simple local-only adaptation of remote runHistoryList (509) + listSnippets (1232) pattern.
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/clipboard/history", port), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var histResp proto.HistoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&histResp); err != nil {
+		return nil, err
+	}
+	if !histResp.OK {
+		return nil, fmt.Errorf("history request failed")
+	}
+	return histResp.Items, nil
+}
+
+func fetchHistoryEntry(port int, token, id string) (*proto.ClipboardResponse, error) {
+	// Simple local adaptation of fetchClipboard + remote /history/{id} fetch (610).
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := fmt.Sprintf("http://127.0.0.1:%d/clipboard/history/%s", port, id)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var clipResp proto.ClipboardResponse
+	if err := json.NewDecoder(resp.Body).Decode(&clipResp); err != nil {
+		return nil, err
+	}
+	return &clipResp, nil
 }
 
 // ── relay / device pairing ───────────────────────────────────────────────────

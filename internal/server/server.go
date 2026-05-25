@@ -135,6 +135,7 @@ func New(cfg *config.Config, configPath string, tokenStore *auth.TokenStore, rea
 	mux.HandleFunc("/clipboard/history/", s.handleClipboardHistory)
 	mux.HandleFunc("/clipboard/history/search", s.handleHistorySearch)
 	mux.HandleFunc("/clipboard/watch", s.handleWatch)
+	mux.HandleFunc("/clipboard/direct-paste", s.handleDirectPaste) // DirectPaste v1 (new in this feature)
 	mux.HandleFunc("/snippets", s.handleSnippets)
 	mux.HandleFunc("/snippets/", s.handleSnippet)
 	mux.HandleFunc("/health", s.handleHealth)

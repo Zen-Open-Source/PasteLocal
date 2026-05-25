@@ -1015,3 +1015,71 @@ func TestClipboardReadWithVisionAnalysis(t *testing.T) {
 		t.Errorf("analysis.ocr_text = %q, want 'fake-ocr-from-handler'", ocr)
 	}
 }
+
+// -------------------------------------------------------------------
+// History handler tests added for Slice 1 CLI coverage (list + fetch by ID)
+// Exercises response shapes the new `pastelocal history` commands rely on.
+// -------------------------------------------------------------------
+
+func TestHistoryList_EmptyWhenDisabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.History.Enabled = false
+	s, token := newTestServer(t, cfg, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/clipboard/history", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	s.handleClipboardHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for disabled list", w.Code)
+	}
+	var resp proto.HistoryResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.OK || len(resp.Items) != 0 {
+		t.Errorf("expected OK:true + empty items for disabled history list, got OK=%v len=%d", resp.OK, len(resp.Items))
+	}
+}
+
+func TestHistoryFetchByID_TextFormatShape(t *testing.T) {
+	// Verifies the server contract that the CLI `get` switch relies on:
+	// non-png entries populate Text, not Image (critical for the defensive fallback).
+	cfg := config.Default()
+	s, token := newTestServer(t, cfg, &mockReader{text: "hello history text"})
+
+	// Perform a read to populate history
+	reqRead := httptest.NewRequest(http.MethodGet, "/clipboard", nil)
+	reqRead.Header.Set("Authorization", "Bearer "+token)
+	wRead := httptest.NewRecorder()
+	s.handleClipboard(wRead, reqRead)
+
+	// List to obtain an ID
+	reqList := httptest.NewRequest(http.MethodGet, "/clipboard/history", nil)
+	reqList.Header.Set("Authorization", "Bearer "+token)
+	wList := httptest.NewRecorder()
+	s.handleClipboardHistory(wList, reqList)
+
+	var listResp proto.HistoryResponse
+	json.NewDecoder(wList.Body).Decode(&listResp)
+	if len(listResp.Items) == 0 {
+		t.Fatal("expected at least one history entry after read")
+	}
+	id := listResp.Items[0].ID
+
+	// Fetch specific ID
+	reqFetch := httptest.NewRequest(http.MethodGet, "/clipboard/history/"+id, nil)
+	reqFetch.Header.Set("Authorization", "Bearer "+token)
+	wFetch := httptest.NewRecorder()
+	s.handleClipboardHistory(wFetch, reqFetch)
+
+	var clipResp proto.ClipboardResponse
+	if err := json.NewDecoder(wFetch.Body).Decode(&clipResp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if clipResp.Text == "" || clipResp.Image != "" {
+		t.Errorf("text history entry must populate Text and leave Image empty (CLI get switch depends on this)")
+	}
+}

@@ -343,6 +343,31 @@ func TestE2E_HistoryList(t *testing.T) {
 	}
 }
 
+func TestE2E_HistoryFetchByID_PNG(t *testing.T) {
+	h := newHarness(t)
+
+	h.reader.content = &clipboard.Content{Data: createTestPNG(t), Format: "png"}
+	h.doRequest(http.MethodGet, "/clipboard", nil)
+
+	listW := h.doRequest(http.MethodGet, "/clipboard/history", nil)
+	var listResp proto.HistoryResponse
+	decodeResponse(t, listW, &listResp)
+	if len(listResp.Items) == 0 {
+		t.Fatal("expected at least one history item")
+	}
+	id := listResp.Items[0].ID
+
+	fetchW := h.doRequest(http.MethodGet, "/clipboard/history/"+id, nil)
+	if fetchW.Code != http.StatusOK {
+		t.Fatalf("fetch status = %d", fetchW.Code)
+	}
+	var clipResp proto.ClipboardResponse
+	decodeResponse(t, fetchW, &clipResp)
+	if clipResp.Format != "png" || clipResp.Image == "" {
+		t.Error("expected png with Image data for history fetch")
+	}
+}
+
 func TestE2E_AuditLogWritten(t *testing.T) {
 	h := newHarness(t)
 
